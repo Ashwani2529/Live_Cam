@@ -1,109 +1,93 @@
 const localVideo = document.getElementById('localVideo');
-const signalingServer = new WebSocket('wss://live-cam.onrender.com'); // Update with your signaling server URL
-const peerConnections = {}; // Store peer connections
-const videoElements = {}; // Store video elements for remote streams
+const videoContainer = document.getElementById('videoContainer');
+const signalingServer = new WebSocket('http://localhost:3000'); // Use your deployed signaling server
+const peerConnections = {};
+const videoElements = {};
 const userId = Math.random().toString(36).substring(7);
 
 signalingServer.onmessage = async (message) => {
-    const data = JSON.parse(message.data);
+  const data = JSON.parse(message.data);
 
-    if (data.type === 'existing-participants') {
-        // Connect to all existing participants
-        for (const peerId of data.participants) {
-            setupPeerConnection(peerId, true);
-        }
-    } else if (data.type === 'new-peer') {
-        // Connect to the new participant
-        const peerId = data.id;
-        if (!peerConnections[peerId]) {
-            setupPeerConnection(peerId, true); // Initiate connection with the new peer
-        }
-    } else if (data.type === 'signal' && data.signal) {
-        const peerId = data.sender;
-
-        if (!peerConnections[peerId]) {
-            setupPeerConnection(peerId, false);
-        }
-
-        const peerConnection = peerConnections[peerId];
-        if (data.signal.type === 'offer') {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-            signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: answer, sender: userId }));
-        } else if (data.signal.type === 'answer') {
-            await peerConnection.setRemoteDescription(new RTCSessionDescription(data.signal));
-        } else if (data.signal.candidate) {
-            await peerConnection.addIceCandidate(new RTCIceCandidate(data.signal));
-        }
-    } else if (data.type === 'peer-disconnected') {
-        const peerId = data.id;
-        if (peerConnections[peerId]) {
-            peerConnections[peerId].close();
-            delete peerConnections[peerId];
-        }
-        const videoElement = videoElements[peerId];
-        if (videoElement && document.contains(videoElement)) {
-            videoElement.remove();
-            delete videoElements[peerId];
-        }
-        
-        
+  if (data.type === 'existing-participants') {
+    for (const peerId of data.participants) {
+      setupPeerConnection(peerId, true);
+    }
+  } else if (data.type === 'new-peer') {
+    const peerId = data.id;
+    if ( !peerConnections[peerId]) {
+      setupPeerConnection(peerId, true);
+    }
+  } else if (data.type === 'signal') {
+    const peerId = data.sender;
+    if (!peerConnections[peerId]) {
+      await setupPeerConnection(peerId, false);
     }
 
-    // Ensure only one local video element exists
-    if (localVideo && localVideo.srcObject && videoElements[userId]) {
-        videoElements[userId].remove();
-        delete videoElements[userId];
+    const pc = peerConnections[peerId];
+
+    if (data.signal.type === 'offer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: answer, sender: userId }));
+    } else if (data.signal.type === 'answer') {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+    } else if (data.signal.candidate) {
+      await pc.addIceCandidate(new RTCIceCandidate(data.signal));
     }
-    
+  } else if (data.type === 'peer-disconnected') {
+    const peerId = data.id;
+    if (peerConnections[peerId]) {
+      peerConnections[peerId].close();
+      delete peerConnections[peerId];
+    }
+    const video = videoElements[peerId];
+    if (video && document.body.contains(video)) {
+      video.remove();
+      delete videoElements[peerId];
+    }
+  }
 };
 
 async function setupPeerConnection(peerId, isInitiator) {
-    const peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
 
-    peerConnections[peerId] = peerConnection;
+  peerConnections[peerId] = pc;
 
-    // Handle ICE candidates
-    peerConnection.onicecandidate = ({ candidate }) => {
-        if (candidate && peerConnections[peerId]) {
-            signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: candidate, sender: userId }));
-        }        
-    };    
-
-    // Handle remote stream
-    peerConnection.ontrack = (event) => {
-        if (!videoElements[peerId]) {
-            const video = document.createElement('video');
-            video.autoplay = true;
-            video.controls = false;
-            video.style.width = '200px';
-            video.style.margin = '10px';
-            videoElements[peerId] = video;
-            document.body.appendChild(video);
-        }
-        videoElements[peerId].srcObject = event.streams[0];
-    };
-
-    // Add local stream to the peer connection
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
-    // If the initiator, create an offer
-    if (isInitiator) {
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-        signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: offer, sender: userId }));
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: event.candidate, sender: userId }));
     }
+  };
 
-    // Attach local stream to local video element (only done once)
-    if (!localVideo.srcObject) {
-        localVideo.srcObject = stream;
+  pc.ontrack = (event) => {
+    if (!videoElements[peerId]) {
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.style.width = '200px';
+      video.style.height = '200px';
+      videoElements[peerId] = video;
+      video.srcObject = event.streams[0];
+      videoContainer.appendChild(video);
     }
+  };
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+  if (!localVideo.srcObject) {
+    localVideo.srcObject = stream;
+  }
+
+  if (isInitiator) {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: offer, sender: userId }));
+  }
 }
 
-// Register the user with the signaling server
 signalingServer.onopen = () => {
-    signalingServer.send(JSON.stringify({ type: 'register', id: userId }));
+  signalingServer.send(JSON.stringify({ type: 'register', id: userId }));
 };

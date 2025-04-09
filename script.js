@@ -1,5 +1,5 @@
 const localVideo = document.getElementById('localVideo');
-const signalingServer = new WebSocket('wss://live-cam.onrender.com'); // Update with your signaling server URL
+const signalingServer = new WebSocket('http://localhost:3000'); // Update with your signaling server URL
 
 const peerConnections = {}; // Store peer connections
 const videoElements = {}; // Store video elements for remote streams
@@ -44,10 +44,12 @@ signalingServer.onmessage = async (message) => {
             delete peerConnections[peerId];
         }
         const videoElement = videoElements[peerId];
-        if (videoElement) {
+        if (videoElement && document.contains(videoElement)) {
             videoElement.remove();
             delete videoElements[peerId];
         }
+        
+        
     }
 
     // Ensure only one local video element exists
@@ -55,6 +57,7 @@ signalingServer.onmessage = async (message) => {
         videoElements[userId].remove();
         delete videoElements[userId];
     }
+    
 };
 
 async function setupPeerConnection(peerId, isInitiator) {
@@ -66,10 +69,10 @@ async function setupPeerConnection(peerId, isInitiator) {
 
     // Handle ICE candidates
     peerConnection.onicecandidate = ({ candidate }) => {
-        if (candidate) {
+        if (candidate && peerConnections[peerId]) {
             signalingServer.send(JSON.stringify({ type: 'signal', target: peerId, signal: candidate, sender: userId }));
-        }
-    };
+        }        
+    };    
 
     // Handle remote stream
     peerConnection.ontrack = (event) => {

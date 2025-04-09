@@ -24,16 +24,16 @@ wss.on('connection', (ws) => {
             // Notify the new participant about existing participants
             const existingParticipants = Array.from(clients.keys()).filter((id) => id !== userId);
             clients.set(userId, ws);
-            if(existingParticipants.length > 0) {
-            ws.send(JSON.stringify({ type: 'existing-participants', participants: existingParticipants }));
-            }// Notify existing participants about the new participant
+            if (existingParticipants.length > 0) {
+                ws.send(JSON.stringify({ type: 'existing-participants', participants: existingParticipants }));
+            }
+        
+            // Notify existing participants about the new participant
             clients.forEach((client, id) => {
-                if (id === userId) {
                     client.send(JSON.stringify({ type: 'new-peer', id: userId }));
-                }
             });
-            
-        } else if (data.type === 'signal') {
+        }
+         else if (data.type === 'signal') {
             const target = clients.get(data.target);
             if (target) {
                 target.send(JSON.stringify({ type: 'signal', signal: data.signal, sender: data.sender }));

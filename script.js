@@ -1,5 +1,5 @@
 const localVideo = document.getElementById('localVideo');
-const signalingServer = new WebSocket('http://localhost:3000'); // Update with your signaling server URL
+const signalingServer = new WebSocket('wss://live-cam.onrender.app'); // Update with your signaling server URL
 
 const peerConnections = {}; // Store peer connections
 const videoElements = {}; // Store video elements for remote streams

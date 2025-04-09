@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Camera View</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            background-color: #f4f4f4;
+        }
+
+        video {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            background: black;
+            width: 300px;
+            height: auto;
+            margin: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <video id="localVideo" autoplay muted></video>
+    <script src="script.js"></script>
+</body>
+
+</html>

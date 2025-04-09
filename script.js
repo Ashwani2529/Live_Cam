@@ -1,6 +1,6 @@
 const localVideo = document.getElementById('localVideo');
 const videoContainer = document.getElementById('videoContainer');
-const signalingServer = new WebSocket('http://localhost:3000'); // Use your deployed signaling server
+const signalingServer = new WebSocket('wss://live-cam.onrender.com'); // Use your deployed signaling server
 const peerConnections = {};
 const videoElements = {};
 const userId = Math.random().toString(36).substring(7);

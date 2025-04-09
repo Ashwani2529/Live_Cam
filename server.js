@@ -27,7 +27,6 @@ wss.on('connection', (ws) => {
             if (existingParticipants.length > 0) {
                 ws.send(JSON.stringify({ type: 'existing-participants', participants: existingParticipants }));
             }
-        
             // Notify existing participants about the new participant
             clients.forEach((client, id) => {
                     client.send(JSON.stringify({ type: 'new-peer', id: userId }));

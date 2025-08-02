@@ -119,28 +119,57 @@ function createVideoElement(participantId, stream, isLocal = false) {
     const videoWrapper = document.createElement('div');
     videoWrapper.className = 'video-container';
     videoWrapper.id = `video-wrapper-${participantId}`;
+    
+    // Add accessibility attributes
+    videoWrapper.setAttribute('role', 'gridcell');
+    videoWrapper.setAttribute('tabindex', '0');
+    videoWrapper.setAttribute('aria-label', isLocal ? 'Your video' : `Video of participant ${participantId.substring(0, 6)}`);
 
     const video = document.createElement('video');
     video.autoplay = true;
     video.playsInline = true;
     video.muted = isLocal; // Mute local video to prevent feedback
     video.srcObject = stream;
+    video.setAttribute('aria-label', isLocal ? 'Your video stream' : `Video stream of participant ${participantId.substring(0, 6)}`);
+    video.setAttribute('role', 'img');
 
     const overlay = document.createElement('div');
     overlay.className = 'video-overlay';
+    overlay.setAttribute('aria-hidden', 'true'); // Decorative overlay
 
     const participantName = document.createElement('div');
     participantName.className = 'participant-name';
     participantName.textContent = isLocal ? 'You' : `Participant ${participantId.substring(0, 6)}`;
+    participantName.setAttribute('aria-label', isLocal ? 'Your video' : `Participant ${participantId.substring(0, 6)}`);
 
     const participantStatus = document.createElement('div');
     participantStatus.className = 'participant-status';
     participantStatus.id = `status-${participantId}`;
+    participantStatus.setAttribute('aria-live', 'polite');
+    participantStatus.setAttribute('aria-label', 'Media status');
 
     overlay.appendChild(participantName);
     overlay.appendChild(participantStatus);
     videoWrapper.appendChild(video);
     videoWrapper.appendChild(overlay);
+
+    // Add keyboard navigation
+    videoWrapper.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            videoWrapper.focus();
+        }
+    });
+
+    // Add focus styling
+    videoWrapper.addEventListener('focus', () => {
+        videoWrapper.style.outline = '3px solid #007bff';
+        videoWrapper.style.outlineOffset = '2px';
+    });
+
+    videoWrapper.addEventListener('blur', () => {
+        videoWrapper.style.outline = 'none';
+    });
 
     videoElements[participantId] = {
         wrapper: videoWrapper,
@@ -150,6 +179,8 @@ function createVideoElement(participantId, stream, isLocal = false) {
 
     videoContainer.appendChild(videoWrapper);
     updateParticipantStatus(participantId, { video: true, audio: true });
+    
+    console.log(`Created video element for ${isLocal ? 'local user' : 'participant'} ${participantId}`);
 }
 
 // Setup peer connection
@@ -370,7 +401,16 @@ async function handlePeerDisconnection(peerId) {
 // Update video grid layout based on participant count
 function updateVideoGrid() {
     const participantCount = participants.size;
-    videoContainer.className = `video-grid participants-${participantCount}`;
+    const maxSupportedParticipants = 16;
+    const effectiveCount = Math.min(participantCount, maxSupportedParticipants);
+    
+    videoContainer.className = `video-grid participants-${effectiveCount}`;
+    
+    // Add accessibility attributes
+    videoContainer.setAttribute('aria-label', `Video call with ${participantCount} participant${participantCount !== 1 ? 's' : ''}`);
+    videoContainer.setAttribute('role', 'grid');
+    
+    console.log(`Updated video grid layout for ${participantCount} participants`);
 }
 
 // Setup control button listeners
@@ -390,9 +430,13 @@ async function toggleVideo() {
             
             videoBtn.classList.toggle('off', !isVideoEnabled);
             videoBtn.textContent = isVideoEnabled ? '📹' : '📹';
+            videoBtn.setAttribute('aria-pressed', isVideoEnabled.toString());
+            videoBtn.setAttribute('aria-label', `Video is ${isVideoEnabled ? 'on' : 'off'}. Click to turn ${isVideoEnabled ? 'off' : 'on'}`);
             
             updateParticipantStatus(userId, { video: isVideoEnabled, audio: isAudioEnabled });
             broadcastMediaState();
+            
+            console.log(`Video ${isVideoEnabled ? 'enabled' : 'disabled'}`);
         }
     }
 }
@@ -407,9 +451,13 @@ async function toggleAudio() {
             
             audioBtn.classList.toggle('off', !isAudioEnabled);
             audioBtn.textContent = isAudioEnabled ? '🎤' : '🔇';
+            audioBtn.setAttribute('aria-pressed', isAudioEnabled.toString());
+            audioBtn.setAttribute('aria-label', `Microphone is ${isAudioEnabled ? 'on' : 'off'}. Click to turn ${isAudioEnabled ? 'off' : 'on'}`);
             
             updateParticipantStatus(userId, { video: isVideoEnabled, audio: isAudioEnabled });
             broadcastMediaState();
+            
+            console.log(`Audio ${isAudioEnabled ? 'enabled' : 'disabled'}`);
         }
     }
 }

@@ -45,6 +45,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
   const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const userIdRef = useRef<string>(uuidv4());
   const currentRoomRef = useRef<string>(roomId);
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   // Initialize media stream
   const initializeMediaStream = useCallback(async () => {
@@ -70,6 +71,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       });
 
       setLocalStream(stream);
+      localStreamRef.current = stream; // Keep ref in sync
       
       // Add local participant
       const localParticipant: Participant = {
@@ -109,18 +111,31 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
     peerConnectionsRef.current.set(peerId, pc);
 
     // Add local stream tracks
-    if (localStream) {
-      console.log(`📤 Adding ${localStream.getTracks().length} local tracks to connection with ${peerId}`);
-      localStream.getTracks().forEach((track) => {
-        pc.addTrack(track, localStream);
+    const currentLocalStream = localStreamRef.current;
+    if (currentLocalStream) {
+      const tracks = currentLocalStream.getTracks();
+      console.log(`📤 Adding ${tracks.length} local tracks to connection with ${peerId}:`, 
+        tracks.map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState, id: t.id })));
+      
+      tracks.forEach((track, index) => {
+        console.log(`📤 Adding track ${index + 1}/${tracks.length}: ${track.kind} (${track.id})`);
+        const sender = pc.addTrack(track, currentLocalStream);
+        console.log(`📤 Track added, sender:`, sender);
       });
+      
+      console.log(`✅ All ${tracks.length} tracks added to peer connection with ${peerId}`);
     } else {
-      console.warn(`⚠️ No local stream available when setting up connection with ${peerId}`);
+      console.error(`❌ No local stream available when setting up connection with ${peerId}`);
+      console.log(`❌ Current localStream state:`, currentLocalStream);
+      console.log(`❌ LocalStream from state:`, localStream);
     }
 
     // Handle incoming streams
     pc.ontrack = (event) => {
-      console.log(`🎥 Received remote stream from ${peerId}:`, event);
+      console.log(`🎥 ONTRACK EVENT from ${peerId}:`, event);
+      console.log(`🎥 Event streams:`, event.streams);
+      console.log(`🎥 Event track:`, event.track);
+      
       const remoteStream = event.streams[0];
       
       if (!remoteStream) {
@@ -129,7 +144,13 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       }
       
       const tracks = remoteStream.getTracks();
-      console.log(`📺 Remote stream has ${tracks.length} tracks:`, tracks.map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
+      console.log(`📺 Remote stream has ${tracks.length} tracks:`, tracks.map(t => ({ 
+        kind: t.kind, 
+        enabled: t.enabled, 
+        readyState: t.readyState,
+        id: t.id,
+        label: t.label 
+      })));
       
       setParticipants(prev => {
         const newParticipants = new Map(prev);
@@ -153,6 +174,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
           });
         }
         
+        console.log(`✅ Participant ${peerId} stream updated successfully`);
         return newParticipants;
       });
     };
@@ -187,13 +209,24 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
-      if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({
-          type: 'signal',
-          target: peerId,
-          signal: event.candidate,
-          sender: userIdRef.current
-        }));
+      console.log(`🧊 ICE candidate event for ${peerId}:`, event.candidate);
+      
+      if (event.candidate) {
+        console.log(`📤 Sending ICE candidate to ${peerId}:`, event.candidate);
+        
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'signal',
+            target: peerId,
+            signal: event.candidate,
+            sender: userIdRef.current
+          }));
+          console.log(`✅ ICE candidate sent to ${peerId}`);
+        } else {
+          console.error(`❌ WebSocket not ready when sending ICE candidate to ${peerId}`);
+        }
+      } else {
+        console.log(`🏁 ICE gathering complete for ${peerId}`);
       }
     };
 
@@ -203,8 +236,11 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       setTimeout(async () => {
         try {
           // Double-check that we still have the local stream
-          if (!localStream) {
+          const currentLocalStream = localStreamRef.current;
+          if (!currentLocalStream) {
             console.error(`❌ No local stream available when creating offer for ${peerId}`);
+            console.log(`❌ LocalStream ref:`, currentLocalStream);
+            console.log(`❌ LocalStream state:`, localStream);
             return;
           }
           
@@ -238,7 +274,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
     }
 
     return pc;
-  }, [localStream, participants]);
+  }, [participants]);
 
   // Handle signaling messages
   const handleSignalingMessage = useCallback(async (data: {
@@ -709,8 +745,9 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       console.log('🧹 Cleaning up WebRTC hook...');
       isInitialized = false;
       
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
       }
       
       peerConnectionsRef.current.forEach(pc => pc.close());

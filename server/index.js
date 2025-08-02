@@ -17,7 +17,7 @@ const wss = new WebSocket.Server({ server });
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
+  origin: "https://live-cam.vercel.app",
   credentials: true
 }));
 app.use(express.json());
@@ -304,8 +304,8 @@ process.on('SIGTERM', () => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔗 WebSocket server ready for connections`);

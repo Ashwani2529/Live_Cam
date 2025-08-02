@@ -18,7 +18,6 @@ const WEBRTC_CONFIG: WebRTCConfig = {
 };
 
 const getWebSocketUrl = () => {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
   
   // For development, use localhost:5000
@@ -26,16 +25,8 @@ const getWebSocketUrl = () => {
     return 'ws://localhost:5000';
   }
   
-  // For production, use the backend server URL
-  // You'll need to set REACT_APP_SERVER_URL in your Vercel environment variables
-  const serverUrl = process.env.REACT_APP_SERVER_URL;
-  if (serverUrl) {
-    return serverUrl.replace('http:', 'ws:').replace('https:', 'wss:');
-  }
-  
-  // Fallback - this should be your backend server URL
-  console.warn('No REACT_APP_SERVER_URL set, using fallback');
-  return 'wss://live-cam.onrender.com'; // Replace with your actual backend URL
+  // For production, use your Render backend server URL
+  return 'wss://live-cam.onrender.com';
 };
 
 export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
@@ -119,26 +110,40 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
 
     // Add local stream tracks
     if (localStream) {
+      console.log(`📤 Adding ${localStream.getTracks().length} local tracks to connection with ${peerId}`);
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
+    } else {
+      console.warn(`⚠️ No local stream available when setting up connection with ${peerId}`);
     }
 
     // Handle incoming streams
     pc.ontrack = (event) => {
-      console.log(`🎥 Received remote stream from ${peerId}`);
+      console.log(`🎥 Received remote stream from ${peerId}:`, event);
       const remoteStream = event.streams[0];
+      
+      if (!remoteStream) {
+        console.error(`❌ No remote stream in ontrack event from ${peerId}`);
+        return;
+      }
+      
+      const tracks = remoteStream.getTracks();
+      console.log(`📺 Remote stream has ${tracks.length} tracks:`, tracks.map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
       
       setParticipants(prev => {
         const newParticipants = new Map(prev);
         const participant = newParticipants.get(peerId);
         
         if (participant) {
+          console.log(`🔄 Updating existing participant ${peerId} with stream`);
           newParticipants.set(peerId, {
             ...participant,
-            stream: remoteStream
+            stream: remoteStream,
+            connectionState: 'connected'
           });
         } else {
+          console.log(`➕ Creating new participant ${peerId} with stream`);
           newParticipants.set(peerId, {
             id: peerId,
             stream: remoteStream,
@@ -192,26 +197,44 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       }
     };
 
-    // Create offer if initiator
-    if (isInitiator) {
-      try {
-        const offer = await pc.createOffer({
-          offerToReceiveAudio: true,
-          offerToReceiveVideo: true
-        });
-        await pc.setLocalDescription(offer);
-        
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'signal',
-            target: peerId,
-            signal: offer,
-            sender: userIdRef.current
-          }));
+    // Create offer if initiator and we have the smaller ID (to prevent race conditions)
+    if (isInitiator && userIdRef.current < peerId) {
+      // Small delay to ensure peer connection is fully set up
+      setTimeout(async () => {
+        try {
+          // Double-check that we still have the local stream
+          if (!localStream) {
+            console.error(`❌ No local stream available when creating offer for ${peerId}`);
+            return;
+          }
+          
+          console.log(`🎯 Creating offer for ${peerId} (our ID: ${userIdRef.current} < ${peerId})`);
+          console.log(`📊 Peer connection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
+          
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+          });
+          await pc.setLocalDescription(offer);
+          
+          console.log(`📤 Sending offer to ${peerId}:`, offer);
+          
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'signal',
+              target: peerId,
+              signal: offer,
+              sender: userIdRef.current
+            }));
+          } else {
+            console.error(`❌ WebSocket not ready when sending offer to ${peerId}`);
+          }
+        } catch (error) {
+          console.error(`❌ Error creating offer for ${peerId}:`, error);
         }
-      } catch (error) {
-        console.error(`❌ Error creating offer for ${peerId}:`, error);
-      }
+      }, 500); // Increased delay to ensure everything is ready
+    } else if (isInitiator) {
+      console.log(`⏳ Waiting for ${peerId} to create offer (our ID: ${userIdRef.current} >= ${peerId})`);
     }
 
     return pc;
@@ -234,27 +257,76 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       if ('type' in signal) {
         // Handle SDP (offer/answer)
         if (signal.type === 'offer') {
-          await pc.setRemoteDescription(signal);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+          console.log(`📥 Received offer from ${sender}:`, signal);
+          console.log(`📊 Current connection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
           
-          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({
-              type: 'signal',
-              target: sender,
-              signal: answer,
-              sender: userIdRef.current
-            }));
+          // Check if we're already in a state that can't accept offers
+          if (pc.signalingState === 'stable') {
+            console.log(`✅ Setting remote description and creating answer for ${sender}`);
+            await pc.setRemoteDescription(signal);
+            
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            console.log(`📤 Sending answer to ${sender}:`, answer);
+            
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'signal',
+                target: sender,
+                signal: answer,
+                sender: userIdRef.current
+              }));
+            } else {
+              console.error(`❌ WebSocket not ready when sending answer to ${sender}`);
+            }
+          } else {
+            console.log(`⚠️ Ignoring offer from ${sender}, signaling state: ${pc.signalingState}`);
           }
         } else if (signal.type === 'answer') {
-          await pc.setRemoteDescription(signal);
+          console.log(`📥 Received answer from ${sender}:`, signal);
+          console.log(`📊 Current connection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
+          
+          // Only set remote description if we're in the right state
+          if (pc.signalingState === 'have-local-offer') {
+            console.log(`✅ Setting remote description for answer from ${sender}`);
+            await pc.setRemoteDescription(signal);
+          } else {
+            console.log(`⚠️ Ignoring answer from ${sender}, signaling state: ${pc.signalingState}`);
+          }
         }
       } else if ('candidate' in signal) {
         // Handle ICE candidate
+        console.log(`📥 Received ICE candidate from ${sender}`);
         await pc.addIceCandidate(signal);
       }
     } catch (error) {
       console.error(`❌ Error handling signaling from ${sender}:`, error);
+      
+      // If there's a state error, try to reset the connection
+      if (error instanceof Error && error.name === 'InvalidStateError') {
+        console.log(`🔄 Resetting connection with ${sender} due to state error`);
+        const oldPc = peerConnectionsRef.current.get(sender);
+        if (oldPc) {
+          oldPc.close();
+          peerConnectionsRef.current.delete(sender);
+        }
+        
+        // Remove from participants
+        setParticipants(prev => {
+          const newParticipants = new Map(prev);
+          newParticipants.delete(sender);
+          return newParticipants;
+        });
+        
+        // Try to reconnect after a delay
+        setTimeout(async () => {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            console.log(`🔄 Attempting to reconnect with ${sender}`);
+            await setupPeerConnection(sender, true);
+          }
+        }, 2000);
+      }
     }
   }, [setupPeerConnection]);
 
@@ -346,6 +418,23 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
               for (const peerId of data.participants) {
                 if (peerId !== userIdRef.current) {
                   console.log(`🔗 Setting up connection with ${peerId}`);
+                  
+                  // Add participant placeholder immediately
+                  setParticipants(prev => {
+                    const newParticipants = new Map(prev);
+                    if (!newParticipants.has(peerId)) {
+                      console.log(`➕ Adding participant placeholder for ${peerId}`);
+                      newParticipants.set(peerId, {
+                        id: peerId,
+                        stream: undefined, // Will be updated when stream is received
+                        isLocal: false,
+                        mediaState: { video: true, audio: true },
+                        connectionState: 'connecting'
+                      });
+                    }
+                    return newParticipants;
+                  });
+                  
                   await setupPeerConnection(peerId, true);
                 }
               }
@@ -356,6 +445,22 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
             console.log('🆕 New peer joined:', data.id);
             
             if (data.id !== userIdRef.current) {
+              // Add participant placeholder immediately
+              setParticipants(prev => {
+                const newParticipants = new Map(prev);
+                if (!newParticipants.has(data.id)) {
+                  console.log(`➕ Adding participant placeholder for ${data.id}`);
+                  newParticipants.set(data.id, {
+                    id: data.id,
+                    stream: undefined, // Will be updated when stream is received
+                    isLocal: false,
+                    mediaState: { video: true, audio: true },
+                    connectionState: 'connecting'
+                  });
+                }
+                return newParticipants;
+              });
+              
               await setupPeerConnection(data.id, true);
             }
             break;

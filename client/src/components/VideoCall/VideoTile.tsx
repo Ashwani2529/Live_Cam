@@ -29,7 +29,16 @@ export const VideoTile: React.FC<VideoTileProps> = ({
   // Handle video stream assignment
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !participant.stream || setupInProgressRef.current) return;
+    if (!video || setupInProgressRef.current) return;
+
+    // If no stream yet, show loading state
+    if (!participant.stream) {
+      console.log(`Waiting for stream from ${participant.id}`);
+      setIsLoading(true);
+      setHasError(false);
+      setVideoLoaded(false);
+      return;
+    }
 
     // Check if stream has active tracks
     const activeTracks = participant.stream.getTracks().filter(track => track.readyState === 'live');

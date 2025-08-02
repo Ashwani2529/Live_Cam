@@ -35,6 +35,11 @@ export const VideoCall: React.FC<VideoCallProps> = ({
   const participantsArray = Array.from(participants.values());
   const participantCount = participantsArray.length;
 
+  // Debug: Log participants
+  React.useEffect(() => {
+    console.log(`👥 Participants updated: ${participantCount}`, participantsArray.map(p => ({ id: p.id, hasStream: !!p.stream, connectionState: p.connectionState })));
+  }, [participantCount, participantsArray]);
+
   return (
     <Box
       sx={{

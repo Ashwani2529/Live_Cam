@@ -31,18 +31,45 @@ console.log('User ID:', userId);
 
 // WebSocket event handlers
 signalingServer.onopen = () => {
-    console.log('Connected to signaling server');
+    console.log('🔗 Connected to signaling server');
+    console.log('🆔 Registering user:', userId);
     updateConnectionStatus('connected');
-    signalingServer.send(JSON.stringify({ type: 'register', id: userId }));
+    
+    // Register with the server
+    signalingServer.send(JSON.stringify({ 
+        type: 'register', 
+        id: userId,
+        timestamp: Date.now()
+    }));
+    
+    // Clear any previous connection state
+    console.log('🧹 Clearing previous connection state...');
+    Object.keys(peerConnections).forEach(peerId => {
+        if (peerConnections[peerId].connectionState !== 'connected') {
+            console.log(`🗑️ Removing stale connection: ${peerId}`);
+            peerConnections[peerId].close();
+            delete peerConnections[peerId];
+        }
+    });
 };
 
-signalingServer.onclose = () => {
-    console.log('Disconnected from signaling server');
+signalingServer.onclose = (event) => {
+    console.log('❌ Disconnected from signaling server', event.code, event.reason);
     updateConnectionStatus('disconnected');
+    
+    // Attempt to reconnect if not a clean close
+    if (event.code !== 1000) {
+        console.log('🔄 Attempting to reconnect in 3 seconds...');
+        setTimeout(() => {
+            if (signalingServer.readyState === WebSocket.CLOSED) {
+                window.location.reload();
+            }
+        }, 3000);
+    }
 };
 
 signalingServer.onerror = (error) => {
-    console.error('WebSocket error:', error);
+    console.error('🚨 WebSocket error:', error);
     updateConnectionStatus('disconnected');
 };
 
@@ -53,34 +80,101 @@ signalingServer.onmessage = async (message) => {
 
         switch (data.type) {
             case 'existing-participants':
-                console.log('Existing participants:', data.participants);
-                console.log('Current user ID:', userId);
-                for (const peerId of data.participants) {
-                    if (peerId !== userId) {
-                        console.log(`Setting up connection with existing participant: ${peerId}`);
-                        participants.add(peerId);
-                        await setupPeerConnection(peerId, true);
-                    } else {
-                        console.log(`Skipping self in existing participants: ${peerId}`);
+                console.log('📡 Received existing participants:', data.participants);
+                console.log('🆔 Current user ID:', userId);
+                console.log('👥 Current participants before processing:', Array.from(participants));
+                
+                if (data.participants && data.participants.length > 0) {
+                    console.log(`🔄 Processing ${data.participants.length} existing participants...`);
+                    updateConnectionStatus('loading-participants', `Connecting to ${data.participants.length} participants...`);
+                    
+                    // Process each existing participant
+                    for (const peerId of data.participants) {
+                        if (peerId !== userId && peerId) {
+                            console.log(`✅ Adding existing participant: ${peerId}`);
+                            participants.add(peerId);
+                            
+                            // Close any existing connection first (in case of reconnection)
+                            if (peerConnections[peerId]) {
+                                console.log(`🔄 Closing existing connection with ${peerId} for reconnection`);
+                                peerConnections[peerId].close();
+                                delete peerConnections[peerId];
+                            }
+                            
+                            // Set up new peer connection as initiator
+                            try {
+                                await setupPeerConnection(peerId, true);
+                            } catch (error) {
+                                console.error(`❌ Failed to setup connection with ${peerId}:`, error);
+                                // Don't remove from participants, might succeed later
+                            }
+                        } else {
+                            console.log(`⏭️ Skipping self or invalid peer: ${peerId}`);
+                        }
                     }
+                    
+                    console.log('👥 Participants after processing existing:', Array.from(participants));
+                    console.log('🔗 Peer connections:', Object.keys(peerConnections));
+                    
+                    // Update the grid layout
+                    updateVideoGrid();
+                    
+                    // Set timeout to check if connections were successful
+                    setTimeout(() => {
+                        const connectedPeers = Object.keys(peerConnections).filter(peerId => 
+                            peerConnections[peerId].connectionState === 'connected'
+                        );
+                        const totalPeers = data.participants.length;
+                        
+                        if (connectedPeers.length < totalPeers) {
+                            console.log(`⚠️ Only ${connectedPeers.length}/${totalPeers} peers connected successfully`);
+                            updateConnectionStatus('connected', `Connected (${connectedPeers.length}/${totalPeers} peers)`);
+                        } else {
+                            updateConnectionStatus('connected', `Connected to ${totalPeers} participants`);
+                        }
+                    }, 5000);
+                    
+                } else {
+                    console.log('👤 No existing participants, user is alone in the call');
+                    updateConnectionStatus('connected', 'Connected - First participant');
                 }
-                updateVideoGrid();
                 break;
 
             case 'new-peer':
                 const peerId = data.id;
-                console.log('New peer joined:', peerId);
-                console.log('Current user ID:', userId);
-                console.log('Existing peer connections:', Object.keys(peerConnections));
-                if (peerId !== userId && !peerConnections[peerId]) {
-                    console.log(`Setting up connection with new peer: ${peerId}`);
+                const isReconnection = data.isReconnection || false;
+                console.log(`🆕 ${isReconnection ? 'Peer reconnected' : 'New peer joined'}:`, peerId);
+                console.log('🆔 Current user ID:', userId);
+                console.log('🔗 Existing peer connections:', Object.keys(peerConnections));
+                console.log('👥 Current participants:', Array.from(participants));
+                
+                if (peerId !== userId && peerId) {
+                    if (peerConnections[peerId]) {
+                        if (isReconnection) {
+                            console.log(`🔄 Handling reconnection for ${peerId}, closing existing connection`);
+                            peerConnections[peerId].close();
+                            delete peerConnections[peerId];
+                            
+                            // Remove and re-add participant
+                            participants.delete(peerId);
+                            if (videoElements[peerId]) {
+                                videoElements[peerId].wrapper.remove();
+                                delete videoElements[peerId];
+                            }
+                        } else {
+                            console.log(`⚠️ Peer connection already exists for: ${peerId}, skipping`);
+                            return;
+                        }
+                    }
+                    
+                    console.log(`✅ Setting up connection with ${isReconnection ? 'reconnected' : 'new'} peer: ${peerId}`);
                     participants.add(peerId);
                     await setupPeerConnection(peerId, true);
                     updateVideoGrid();
                 } else if (peerId === userId) {
-                    console.log(`Ignoring new-peer message for self: ${peerId}`);
+                    console.log(`⏭️ Ignoring new-peer message for self: ${peerId}`);
                 } else {
-                    console.log(`Peer connection already exists for: ${peerId}`);
+                    console.log(`❌ Invalid peer ID: ${peerId}`);
                 }
                 break;
 
@@ -109,16 +203,37 @@ signalingServer.onmessage = async (message) => {
 // Initialize local media and UI
 async function initializeApp() {
     try {
-        console.log('Initializing application...');
+        console.log('🚀 Initializing application...');
+        console.log('🆔 User ID:', userId);
+        
+        // Clear any existing state from previous sessions
+        participants.clear();
+        Object.keys(peerConnections).forEach(peerId => {
+            peerConnections[peerId].close();
+            delete peerConnections[peerId];
+        });
+        Object.keys(videoElements).forEach(peerId => {
+            if (videoElements[peerId].wrapper.parentNode) {
+                videoElements[peerId].wrapper.remove();
+            }
+            delete videoElements[peerId];
+        });
         
         // Get user media first
         localStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: 1280, height: 720 }, 
-            audio: true 
+            video: { 
+                width: { ideal: 1280, max: 1920 }, 
+                height: { ideal: 720, max: 1080 }
+            }, 
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
         });
         
-        console.log('Got local stream:', localStream);
-        console.log('Local stream tracks:', localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`));
+        console.log('📹 Got local stream:', localStream);
+        console.log('🎵 Local stream tracks:', localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`));
         
         // Create local video element
         createVideoElement(userId, localStream, true);
@@ -128,24 +243,74 @@ async function initializeApp() {
         // Setup control event listeners
         setupControlListeners();
         
-        console.log('Application initialized successfully');
+        console.log('✅ Application initialized successfully');
+        
+        // Set up periodic connection health check
+        setInterval(checkConnectionHealth, 30000);
+        
+        // Show help overlay if user is alone for too long
+        setTimeout(() => {
+            if (participants.size <= 1) {
+                showHelpOverlay();
+            }
+        }, 15000); // Show after 15 seconds if alone
         
     } catch (error) {
-        console.error('Error accessing media devices:', error);
-        alert('Please allow camera and microphone access to use this application.');
+        console.error('🚨 Error accessing media devices:', error);
+        
+        // Show user-friendly error message
+        const errorMessage = error.name === 'NotAllowedError' 
+            ? 'Please allow camera and microphone access to join the video call.'
+            : 'Unable to access your camera or microphone. Please check your device settings.';
+        
+        alert(errorMessage);
         
         // Try with lower constraints
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            console.log('Got fallback stream (video only)');
+            console.log('🔄 Attempting fallback media access...');
+            localStream = await navigator.mediaDevices.getUserMedia({ 
+                video: { width: 640, height: 480 }, 
+                audio: false 
+            });
+            console.log('📹 Got fallback stream (video only)');
             createVideoElement(userId, localStream, true);
             participants.add(userId);
             updateVideoGrid();
             setupControlListeners();
         } catch (fallbackError) {
-            console.error('Fallback media access failed:', fallbackError);
+            console.error('❌ Fallback media access failed:', fallbackError);
+            updateConnectionStatus('disconnected');
         }
     }
+}
+
+// Check connection health and attempt to fix issues
+function checkConnectionHealth() {
+    console.log('🔍 Checking connection health...');
+    
+    // Check WebSocket connection
+    if (signalingServer.readyState !== WebSocket.OPEN) {
+        console.log('⚠️ WebSocket not connected, attempting reload...');
+        window.location.reload();
+        return;
+    }
+    
+    // Check if we have any stale peer connections
+    Object.keys(peerConnections).forEach(peerId => {
+        const pc = peerConnections[peerId];
+        if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            console.log(`🔄 Removing failed connection: ${peerId}`);
+            handlePeerDisconnection(peerId);
+        }
+    });
+    
+    // Verify we have local stream
+    if (!localStream || localStream.getTracks().length === 0) {
+        console.log('⚠️ Local stream missing, reinitializing...');
+        initializeApp();
+    }
+    
+    console.log('✅ Connection health check completed');
 }
 
 // Create video element for participant
@@ -153,8 +318,13 @@ function createVideoElement(participantId, stream, isLocal = false) {
     console.log(`Creating video element for ${participantId}, isLocal: ${isLocal}, stream:`, stream);
     
     const videoWrapper = document.createElement('div');
-    videoWrapper.className = 'video-container loading';
+    videoWrapper.className = 'video-container loading entering';
     videoWrapper.id = `video-wrapper-${participantId}`;
+    
+    // Remove entering class after animation
+    setTimeout(() => {
+        videoWrapper.classList.remove('entering');
+    }, 400);
     
     // Add accessibility attributes
     videoWrapper.setAttribute('role', 'gridcell');
@@ -326,6 +496,11 @@ async function setupPeerConnection(peerId, isInitiator) {
             
             const remoteStream = event.streams[0];
             
+            // Add participant to list if not already there
+            if (!participants.has(peerId)) {
+                participants.add(peerId);
+            }
+            
             if (!videoElements[peerId]) {
                 console.log(`Creating new video element for remote peer ${peerId}`);
                 createVideoElement(peerId, remoteStream, false);
@@ -340,6 +515,14 @@ async function setupPeerConnection(peerId, isInitiator) {
                 wrapper.classList.add('loading');
                 wrapper.classList.remove('loaded', 'no-video');
             }
+            
+            // Ensure the remote stream is properly connected
+            setTimeout(() => {
+                if (videoElements[peerId] && videoElements[peerId].video.srcObject) {
+                    console.log(`Remote stream confirmed for ${peerId}`);
+                    updateVideoGrid(); // Refresh layout
+                }
+            }, 1000);
         };
 
         // Handle connection state changes
@@ -498,19 +681,152 @@ async function handlePeerDisconnection(peerId) {
     updateVideoGrid();
 }
 
+// Calculate optimal grid layout based on participant count and screen dimensions
+function calculateOptimalLayout(participantCount, containerWidth, containerHeight) {
+    if (participantCount === 0) return { cols: 1, rows: 1 };
+    if (participantCount === 1) return { cols: 1, rows: 1 };
+    
+    const aspectRatio = containerWidth / containerHeight;
+    const isMobile = window.innerWidth <= 768;
+    const isSmallMobile = window.innerWidth <= 480;
+    const isLandscape = window.innerWidth > window.innerHeight;
+    
+    let cols, rows;
+    
+    if (isSmallMobile && !isLandscape) {
+        // Small mobile: prioritize vertical stacking for better visibility
+        if (participantCount <= 2) {
+            cols = 1; rows = participantCount;
+        } else if (participantCount <= 4) {
+            cols = 2; rows = Math.ceil(participantCount / 2);
+        } else {
+            cols = 2; rows = Math.ceil(participantCount / 2);
+        }
+    } else if (isMobile) {
+        // Regular mobile: balanced approach
+        if (participantCount <= 2) {
+            cols = isLandscape ? 2 : 1;
+            rows = isLandscape ? 1 : participantCount;
+        } else if (participantCount <= 4) {
+            cols = 2; rows = Math.ceil(participantCount / 2);
+        } else if (participantCount <= 6) {
+            cols = isLandscape ? 3 : 2; 
+            rows = Math.ceil(participantCount / cols);
+        } else {
+            cols = isLandscape ? 3 : 2; 
+            rows = Math.ceil(participantCount / cols);
+        }
+    } else {
+        // Desktop: optimize for screen real estate
+        if (participantCount <= 2) {
+            cols = 2; rows = 1;
+        } else if (participantCount <= 4) {
+            cols = 2; rows = 2;
+        } else if (participantCount <= 6) {
+            cols = 3; rows = 2;
+        } else if (participantCount <= 9) {
+            cols = 3; rows = 3;
+        } else if (participantCount <= 12) {
+            cols = 4; rows = 3;
+        } else if (participantCount <= 16) {
+            cols = 4; rows = 4;
+        } else {
+            // For more than 16 participants, create a scrollable grid
+            cols = 5; rows = Math.ceil(participantCount / 5);
+        }
+    }
+    
+    return { cols, rows };
+}
+
+// Calculate tile dimensions based on layout
+function calculateTileDimensions(layout, containerWidth, containerHeight, gap) {
+    const { cols, rows } = layout;
+    
+    const totalGapWidth = gap * (cols - 1);
+    const totalGapHeight = gap * (rows - 1);
+    
+    const availableWidth = containerWidth - totalGapWidth;
+    const availableHeight = containerHeight - totalGapHeight;
+    
+    let tileWidth = availableWidth / cols;
+    let tileHeight = availableHeight / rows;
+    
+    // Maintain reasonable aspect ratio (prefer 16:9 or 4:3)
+    const targetAspectRatio = window.innerWidth <= 768 ? 4/3 : 16/9;
+    
+    if (tileWidth / tileHeight > targetAspectRatio * 1.5) {
+        // Too wide, constrain width
+        tileWidth = tileHeight * targetAspectRatio;
+    } else if (tileHeight / tileWidth > (1/targetAspectRatio) * 1.5) {
+        // Too tall, constrain height
+        tileHeight = tileWidth / targetAspectRatio;
+    }
+    
+    // Ensure minimum and maximum sizes
+    const minTileSize = window.innerWidth <= 480 ? 120 : window.innerWidth <= 768 ? 150 : 180;
+    const maxTileSize = window.innerWidth <= 768 ? 300 : 400;
+    
+    tileWidth = Math.max(minTileSize, Math.min(maxTileSize, tileWidth));
+    tileHeight = Math.max(minTileSize * 0.75, Math.min(maxTileSize * 0.75, tileHeight));
+    
+    return { width: tileWidth, height: tileHeight };
+}
+
 // Update video grid layout based on participant count
 function updateVideoGrid() {
     const participantCount = participants.size;
-    const maxSupportedParticipants = 16;
-    const effectiveCount = Math.min(participantCount, maxSupportedParticipants);
     
-    videoContainer.className = `video-grid participants-${effectiveCount}`;
+    if (participantCount === 0) return;
+    
+    console.log(`Updating video grid layout for ${participantCount} participants`);
+    
+    // Get container dimensions
+    const containerRect = videoContainer.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    
+    if (containerWidth === 0 || containerHeight === 0) {
+        // Container not ready, try again later
+        setTimeout(updateVideoGrid, 100);
+        return;
+    }
+    
+    // Calculate optimal layout
+    const layout = calculateOptimalLayout(participantCount, containerWidth, containerHeight);
+    console.log(`Calculated layout: ${layout.cols}x${layout.rows} for ${participantCount} participants`);
+    
+    // Get gap size
+    const computedStyle = getComputedStyle(videoContainer);
+    const gap = parseInt(computedStyle.gap) || 8;
+    
+    // Calculate tile dimensions
+    const tileDimensions = calculateTileDimensions(layout, containerWidth, containerHeight, gap);
+    console.log(`Tile dimensions: ${tileDimensions.width}x${tileDimensions.height}`);
+    
+    // Apply grid layout
+    videoContainer.style.gridTemplateColumns = `repeat(${layout.cols}, ${tileDimensions.width}px)`;
+    videoContainer.style.gridTemplateRows = `repeat(${layout.rows}, ${tileDimensions.height}px)`;
+    
+    // Update all video containers
+    Object.values(videoElements).forEach(({ wrapper }) => {
+        wrapper.style.width = `${tileDimensions.width}px`;
+        wrapper.style.height = `${tileDimensions.height}px`;
+        wrapper.style.minWidth = `${tileDimensions.width}px`;
+        wrapper.style.minHeight = `${tileDimensions.height}px`;
+    });
     
     // Add accessibility attributes
     videoContainer.setAttribute('aria-label', `Video call with ${participantCount} participant${participantCount !== 1 ? 's' : ''}`);
     videoContainer.setAttribute('role', 'grid');
     
-    console.log(`Updated video grid layout for ${participantCount} participants`);
+    // Check screen size adequacy
+    checkScreenSizeAdequacy();
+    
+    console.log(`Applied grid layout: ${layout.cols}x${layout.rows}`);
+    
+    // Trigger layout preview in debug mode (uncomment for testing)
+    // previewLayoutForBreakpoints();
 }
 
 // Setup control button listeners
@@ -518,6 +834,24 @@ function setupControlListeners() {
     videoBtn.addEventListener('click', toggleVideo);
     audioBtn.addEventListener('click', toggleAudio);
     leaveBtn.addEventListener('click', leaveCall);
+    
+    // Add window resize listener for responsive layout
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            console.log('Window resized, updating grid layout');
+            updateVideoGrid();
+        }, 150);
+    });
+    
+    // Add orientation change listener for mobile
+    window.addEventListener('orientationchange', () => {
+        setTimeout(() => {
+            console.log('Orientation changed, updating grid layout');
+            updateVideoGrid();
+        }, 300);
+    });
 }
 
 // Toggle video on/off
@@ -620,33 +954,198 @@ function updatePeerMediaState(peerId, mediaState) {
 }
 
 // Update connection status
-function updateConnectionStatus(status) {
+function updateConnectionStatus(status, message) {
     connectionStatus.className = `connection-status ${status}`;
     
     switch (status) {
         case 'connected':
-            connectionStatus.textContent = 'Connected';
+            connectionStatus.textContent = message || 'Connected';
             break;
         case 'connecting':
-            connectionStatus.textContent = 'Connecting...';
+            connectionStatus.textContent = message || 'Connecting...';
+            break;
+        case 'reconnecting':
+            connectionStatus.textContent = message || 'Reconnecting...';
+            connectionStatus.className = 'connection-status connecting';
+            break;
+        case 'loading-participants':
+            connectionStatus.textContent = message || 'Loading participants...';
+            connectionStatus.className = 'connection-status connecting';
             break;
         case 'disconnected':
-            connectionStatus.textContent = 'Disconnected';
+            connectionStatus.textContent = message || 'Disconnected';
             break;
     }
 }
 
 // Debug function to log application state
 function logApplicationState() {
-    console.log('=== APPLICATION STATE ===');
-    console.log('User ID:', userId);
-    console.log('Local stream:', localStream);
-    console.log('Local stream tracks:', localStream ? localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`) : 'None');
-    console.log('Participants:', Array.from(participants));
-    console.log('Peer connections:', Object.keys(peerConnections));
-    console.log('Video elements:', Object.keys(videoElements));
-    console.log('WebSocket state:', signalingServer.readyState);
-    console.log('=========================');
+    const timestamp = new Date().toLocaleTimeString();
+    console.log(`=== APPLICATION STATE [${timestamp}] ===`);
+    console.log('🆔 User ID:', userId);
+    console.log('📹 Local stream:', localStream);
+    console.log('🎵 Local stream tracks:', localStream ? localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`) : 'None');
+    console.log('👥 Participants:', Array.from(participants));
+    console.log('🔗 Peer connections:', Object.keys(peerConnections));
+    console.log('🎥 Video elements:', Object.keys(videoElements));
+    console.log('🌐 WebSocket state:', getWebSocketStateString());
+    console.log('📱 Screen dimensions:', `${window.innerWidth}x${window.innerHeight}`);
+    console.log('📦 Container dimensions:', videoContainer ? `${videoContainer.getBoundingClientRect().width}x${videoContainer.getBoundingClientRect().height}` : 'N/A');
+    
+    // Log connection states
+    Object.keys(peerConnections).forEach(peerId => {
+        const pc = peerConnections[peerId];
+        console.log(`🔗 ${peerId}: ${pc.connectionState} (ICE: ${pc.iceConnectionState}, Signaling: ${pc.signalingState})`);
+    });
+    
+    console.log('=======================================');
+}
+
+// Get human-readable WebSocket state
+function getWebSocketStateString() {
+    switch (signalingServer.readyState) {
+        case WebSocket.CONNECTING: return 'CONNECTING';
+        case WebSocket.OPEN: return 'OPEN';
+        case WebSocket.CLOSING: return 'CLOSING';
+        case WebSocket.CLOSED: return 'CLOSED';
+        default: return 'UNKNOWN';
+    }
+}
+
+// Manual refresh function for debugging
+function refreshParticipants() {
+    console.log('🔄 Manual refresh requested by user');
+    
+    // Re-register with server to get fresh participant list
+    if (signalingServer.readyState === WebSocket.OPEN) {
+        console.log('📡 Re-registering with server...');
+        signalingServer.send(JSON.stringify({ 
+            type: 'register', 
+            id: userId,
+            timestamp: Date.now(),
+            isRefresh: true
+        }));
+    } else {
+        console.log('❌ WebSocket not connected, reloading page...');
+        window.location.reload();
+    }
+}
+
+// Layout preview function for testing different breakpoints
+function previewLayoutForBreakpoints() {
+    if (!participants.size) return;
+    
+    const breakpoints = [
+        { name: 'Small Mobile', width: 375, height: 667 },
+        { name: 'Mobile', width: 768, height: 1024 },
+        { name: 'Tablet', width: 1024, height: 768 },
+        { name: 'Desktop', width: 1440, height: 900 },
+        { name: 'Large Desktop', width: 1920, height: 1080 }
+    ];
+    
+    console.log('=== LAYOUT PREVIEW ===');
+    console.log(`Testing layouts for ${participants.size} participants:`);
+    
+    breakpoints.forEach(bp => {
+        // Temporarily mock window dimensions
+        const originalWidth = window.innerWidth;
+        const originalHeight = window.innerHeight;
+        
+        Object.defineProperty(window, 'innerWidth', { value: bp.width, writable: true });
+        Object.defineProperty(window, 'innerHeight', { value: bp.height, writable: true });
+        
+        const layout = calculateOptimalLayout(participants.size, bp.width * 0.9, bp.height * 0.7);
+        const tileDims = calculateTileDimensions(layout, bp.width * 0.9, bp.height * 0.7, 8);
+        
+        console.log(`${bp.name} (${bp.width}x${bp.height}): ${layout.cols}x${layout.rows} grid, tiles: ${Math.round(tileDims.width)}x${Math.round(tileDims.height)}`);
+        
+        // Restore original values
+        Object.defineProperty(window, 'innerWidth', { value: originalWidth, writable: true });
+        Object.defineProperty(window, 'innerHeight', { value: originalHeight, writable: true });
+    });
+    console.log('=====================');
+}
+
+// Check if screen is too small and show notification
+function checkScreenSizeAdequacy() {
+    const participantCount = participants.size;
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+    
+    // Calculate minimum required dimensions
+    const minTileSize = 100; // Absolute minimum for readability
+    const layout = calculateOptimalLayout(participantCount, screenWidth, screenHeight);
+    const requiredWidth = layout.cols * minTileSize + (layout.cols - 1) * 8;
+    const requiredHeight = layout.rows * minTileSize + (layout.rows - 1) * 8;
+    
+    if (screenWidth < requiredWidth || screenHeight < requiredHeight) {
+        showScreenSizeWarning(participantCount);
+        return false;
+    } else {
+        hideScreenSizeWarning();
+        return true;
+    }
+}
+
+// Show screen size warning
+function showScreenSizeWarning(participantCount) {
+    let warning = document.getElementById('screen-size-warning');
+    if (!warning) {
+        warning = document.createElement('div');
+        warning.id = 'screen-size-warning';
+        warning.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            z-index: 1000;
+            font-size: 14px;
+            max-width: 300px;
+            backdrop-filter: blur(10px);
+        `;
+        document.body.appendChild(warning);
+    }
+    
+    warning.innerHTML = `
+        <h3 style="margin: 0 0 10px 0;">Screen Too Small</h3>
+        <p style="margin: 0 0 10px 0;">Your screen may be too small to comfortably display all ${participantCount} participants.</p>
+        <p style="margin: 0; font-size: 12px; opacity: 0.8;">Try rotating your device or using a larger screen for the best experience.</p>
+    `;
+    
+    setTimeout(() => {
+        if (warning && warning.parentNode) {
+            warning.parentNode.removeChild(warning);
+        }
+    }, 5000);
+}
+
+// Hide screen size warning
+function hideScreenSizeWarning() {
+    const warning = document.getElementById('screen-size-warning');
+    if (warning && warning.parentNode) {
+        warning.parentNode.removeChild(warning);
+    }
+}
+
+// Show help overlay for refreshing participants
+function showHelpOverlay() {
+    const overlay = document.getElementById('helpOverlay');
+    if (overlay) {
+        overlay.style.display = 'flex';
+        console.log('ℹ️ Showing help overlay for participant refresh');
+        
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            if (overlay.style.display === 'flex') {
+                overlay.style.display = 'none';
+            }
+        }, 10000);
+    }
 }
 
 // Initialize the application
@@ -654,3 +1153,40 @@ initializeApp();
 
 // Add debug logging every 10 seconds
 setInterval(logApplicationState, 10000);
+
+// Expose debug functions globally for testing
+window.videoCallDebug = {
+    logState: logApplicationState,
+    previewLayouts: previewLayoutForBreakpoints,
+    updateGrid: updateVideoGrid,
+    refreshParticipants: refreshParticipants,
+    participants: () => Array.from(participants),
+    videoElements: () => Object.keys(videoElements),
+    connections: () => Object.keys(peerConnections).map(peerId => ({
+        peerId,
+        connectionState: peerConnections[peerId].connectionState,
+        iceConnectionState: peerConnections[peerId].iceConnectionState
+    }))
+};
+
+// Add double-tap listener for mobile refresh
+let lastTap = 0;
+document.addEventListener('touchend', (e) => {
+    const currentTime = new Date().getTime();
+    const tapLength = currentTime - lastTap;
+    if (tapLength < 500 && tapLength > 0) {
+        console.log('📱 Double tap detected - refreshing participants');
+        refreshParticipants();
+        e.preventDefault();
+    }
+    lastTap = currentTime;
+});
+
+// Add keyboard shortcut for refresh (Ctrl+R or Cmd+R won't work, so use Ctrl+Shift+R)
+document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'R') {
+        e.preventDefault();
+        console.log('⌨️ Keyboard shortcut detected - refreshing participants');
+        refreshParticipants();
+    }
+});

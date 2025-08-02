@@ -30,31 +30,60 @@ wss.on('connection', (ws) => {
             switch (data.type) {
                 case 'register':
                     userId = data.id;
+                    const isRefresh = data.isRefresh || false;
+                    
+                    // Check if this user was already connected (reconnection scenario)
+                    const wasAlreadyConnected = clients.has(userId);
+                    
+                    // Set/update the client connection
                     clients.set(userId, ws);
                     
-                    // Get existing participants (excluding the new user)
+                    // Get existing participants (excluding the current user)
                     const existingParticipants = Array.from(clients.keys()).filter((id) => id !== userId);
                     
-                    // Send existing participants to the new user
+                    const actionType = isRefresh ? 'refreshed' : wasAlreadyConnected ? 'reconnected' : 'registered';
+                    console.log(`User ${userId} ${actionType}. Existing participants:`, existingParticipants);
+                    
+                    // Always send existing participants to the (re)connecting user
                     if (existingParticipants.length > 0) {
+                        console.log(`Sending ${existingParticipants.length} existing participants to ${userId}`);
                         ws.send(JSON.stringify({ 
                             type: 'existing-participants', 
-                            participants: existingParticipants 
+                            participants: existingParticipants,
+                            timestamp: Date.now()
+                        }));
+                        
+                        // For refresh requests, don't notify other participants as they already know about this user
+                        if (!isRefresh) {
+                            // Give a small delay to ensure the client processes existing participants first
+                            setTimeout(() => {
+                                // Notify existing participants about this user
+                                existingParticipants.forEach(peerId => {
+                                    const client = clients.get(peerId);
+                                    if (client && client.readyState === WebSocket.OPEN) {
+                                        console.log(`Notifying ${peerId} about ${actionType} peer ${userId}`);
+                                        client.send(JSON.stringify({ 
+                                            type: 'new-peer', 
+                                            id: userId,
+                                            isReconnection: wasAlreadyConnected,
+                                            timestamp: Date.now()
+                                        }));
+                                    }
+                                });
+                            }, 100);
+                        } else {
+                            console.log(`Refresh request - not notifying other participants about ${userId}`);
+                        }
+                    } else {
+                        console.log(`${userId} is the first/only participant`);
+                        ws.send(JSON.stringify({ 
+                            type: 'room-status', 
+                            message: 'You are the first participant in this call',
+                            timestamp: Date.now()
                         }));
                     }
                     
-                    // Notify existing participants about the new user (excluding the new user themselves)
-                    existingParticipants.forEach(peerId => {
-                        const client = clients.get(peerId);
-                        if (client && client.readyState === WebSocket.OPEN) {
-                            client.send(JSON.stringify({ 
-                                type: 'new-peer', 
-                                id: userId 
-                            }));
-                        }
-                    });
-                    
-                    console.log(`User ${userId} registered. Total participants: ${clients.size}`);
+                    console.log(`Total participants after ${userId} ${actionType}: ${clients.size}`);
                     break;
 
                 case 'signal':

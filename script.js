@@ -54,10 +54,14 @@ signalingServer.onmessage = async (message) => {
         switch (data.type) {
             case 'existing-participants':
                 console.log('Existing participants:', data.participants);
+                console.log('Current user ID:', userId);
                 for (const peerId of data.participants) {
                     if (peerId !== userId) {
+                        console.log(`Setting up connection with existing participant: ${peerId}`);
                         participants.add(peerId);
                         await setupPeerConnection(peerId, true);
+                    } else {
+                        console.log(`Skipping self in existing participants: ${peerId}`);
                     }
                 }
                 updateVideoGrid();
@@ -66,10 +70,17 @@ signalingServer.onmessage = async (message) => {
             case 'new-peer':
                 const peerId = data.id;
                 console.log('New peer joined:', peerId);
+                console.log('Current user ID:', userId);
+                console.log('Existing peer connections:', Object.keys(peerConnections));
                 if (peerId !== userId && !peerConnections[peerId]) {
+                    console.log(`Setting up connection with new peer: ${peerId}`);
                     participants.add(peerId);
                     await setupPeerConnection(peerId, true);
                     updateVideoGrid();
+                } else if (peerId === userId) {
+                    console.log(`Ignoring new-peer message for self: ${peerId}`);
+                } else {
+                    console.log(`Peer connection already exists for: ${peerId}`);
                 }
                 break;
 
@@ -98,7 +109,16 @@ signalingServer.onmessage = async (message) => {
 // Initialize local media and UI
 async function initializeApp() {
     try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        console.log('Initializing application...');
+        
+        // Get user media first
+        localStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 1280, height: 720 }, 
+            audio: true 
+        });
+        
+        console.log('Got local stream:', localStream);
+        console.log('Local stream tracks:', localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`));
         
         // Create local video element
         createVideoElement(userId, localStream, true);
@@ -108,16 +128,32 @@ async function initializeApp() {
         // Setup control event listeners
         setupControlListeners();
         
+        console.log('Application initialized successfully');
+        
     } catch (error) {
         console.error('Error accessing media devices:', error);
         alert('Please allow camera and microphone access to use this application.');
+        
+        // Try with lower constraints
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            console.log('Got fallback stream (video only)');
+            createVideoElement(userId, localStream, true);
+            participants.add(userId);
+            updateVideoGrid();
+            setupControlListeners();
+        } catch (fallbackError) {
+            console.error('Fallback media access failed:', fallbackError);
+        }
     }
 }
 
 // Create video element for participant
 function createVideoElement(participantId, stream, isLocal = false) {
+    console.log(`Creating video element for ${participantId}, isLocal: ${isLocal}, stream:`, stream);
+    
     const videoWrapper = document.createElement('div');
-    videoWrapper.className = 'video-container';
+    videoWrapper.className = 'video-container loading';
     videoWrapper.id = `video-wrapper-${participantId}`;
     
     // Add accessibility attributes
@@ -129,9 +165,52 @@ function createVideoElement(participantId, stream, isLocal = false) {
     video.autoplay = true;
     video.playsInline = true;
     video.muted = isLocal; // Mute local video to prevent feedback
-    video.srcObject = stream;
     video.setAttribute('aria-label', isLocal ? 'Your video stream' : `Video stream of participant ${participantId.substring(0, 6)}`);
     video.setAttribute('role', 'img');
+    
+    // Handle video loading states
+    video.addEventListener('loadstart', () => {
+        console.log(`Video loadstart for ${participantId}`);
+        videoWrapper.classList.add('loading');
+        videoWrapper.classList.remove('loaded');
+    });
+    
+    video.addEventListener('loadeddata', () => {
+        console.log(`Video loaded data for ${participantId}`);
+        videoWrapper.classList.remove('loading');
+        videoWrapper.classList.add('loaded');
+    });
+    
+    video.addEventListener('canplay', () => {
+        console.log(`Video can play for ${participantId}`);
+        videoWrapper.classList.remove('loading');
+        videoWrapper.classList.add('loaded');
+    });
+    
+    video.addEventListener('error', (e) => {
+        console.error(`Video error for ${participantId}:`, e);
+        videoWrapper.classList.remove('loading');
+        videoWrapper.classList.add('no-video');
+    });
+    
+    // Set stream after event listeners are attached
+    if (stream) {
+        video.srcObject = stream;
+        console.log(`Set srcObject for ${participantId}, tracks:`, stream.getTracks().length);
+        
+        // Timeout fallback to remove loading state if video doesn't load
+        setTimeout(() => {
+            if (videoWrapper.classList.contains('loading')) {
+                console.warn(`Video loading timeout for ${participantId}`);
+                videoWrapper.classList.remove('loading');
+                videoWrapper.classList.add('no-video');
+            }
+        }, 5000);
+    } else {
+        console.warn(`No stream provided for ${participantId}`);
+        videoWrapper.classList.remove('loading');
+        videoWrapper.classList.add('no-video');
+    }
 
     const overlay = document.createElement('div');
     overlay.className = 'video-overlay';
@@ -201,14 +280,26 @@ async function setupPeerConnection(peerId, isInitiator) {
         peerConnections[peerId] = pc;
 
         // Add local stream tracks
-        if (localStream) {
+        if (localStream && localStream.getTracks().length > 0) {
             console.log(`Adding ${localStream.getTracks().length} tracks to peer connection with ${peerId}`);
             localStream.getTracks().forEach((track, index) => {
-                console.log(`Adding track ${index}: ${track.kind} - ${track.label}`);
-                pc.addTrack(track, localStream);
+                console.log(`Adding track ${index}: ${track.kind} - ${track.label} - enabled: ${track.enabled}`);
+                const sender = pc.addTrack(track, localStream);
+                console.log(`Added track sender:`, sender);
             });
         } else {
             console.error('No local stream available when setting up peer connection');
+            // Try to get media again if not available
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localStream = stream;
+                stream.getTracks().forEach((track, index) => {
+                    console.log(`Adding fallback track ${index}: ${track.kind} - ${track.label}`);
+                    pc.addTrack(track, stream);
+                });
+            } catch (error) {
+                console.error('Failed to get media for peer connection:', error);
+            }
         }
 
         // Handle ICE candidates
@@ -233,12 +324,21 @@ async function setupPeerConnection(peerId, isInitiator) {
                 console.log(`Remote track ${index}: ${track.kind} - enabled: ${track.enabled}`);
             });
             
+            const remoteStream = event.streams[0];
+            
             if (!videoElements[peerId]) {
-                createVideoElement(peerId, event.streams[0], false);
+                console.log(`Creating new video element for remote peer ${peerId}`);
+                createVideoElement(peerId, remoteStream, false);
                 updateVideoGrid();
             } else {
                 console.log('Updating existing video element for', peerId);
-                videoElements[peerId].video.srcObject = event.streams[0];
+                const videoElement = videoElements[peerId].video;
+                videoElement.srcObject = remoteStream;
+                
+                // Update loading state
+                const wrapper = videoElements[peerId].wrapper;
+                wrapper.classList.add('loading');
+                wrapper.classList.remove('loaded', 'no-video');
             }
         };
 
@@ -536,5 +636,21 @@ function updateConnectionStatus(status) {
     }
 }
 
+// Debug function to log application state
+function logApplicationState() {
+    console.log('=== APPLICATION STATE ===');
+    console.log('User ID:', userId);
+    console.log('Local stream:', localStream);
+    console.log('Local stream tracks:', localStream ? localStream.getTracks().map(t => `${t.kind}: ${t.enabled}`) : 'None');
+    console.log('Participants:', Array.from(participants));
+    console.log('Peer connections:', Object.keys(peerConnections));
+    console.log('Video elements:', Object.keys(videoElements));
+    console.log('WebSocket state:', signalingServer.readyState);
+    console.log('=========================');
+}
+
 // Initialize the application
 initializeApp();
+
+// Add debug logging every 10 seconds
+setInterval(logApplicationState, 10000);

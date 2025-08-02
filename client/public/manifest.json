@@ -1,0 +1,17 @@
+{
+  "short_name": "Video Call",
+  "name": "Live Video Call App",
+  "description": "Real-time video calling application built with React and WebRTC",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#2196f3",
+  "background_color": "#121212",
+  "orientation": "portrait-primary"
+} 

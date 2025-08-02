@@ -228,8 +228,8 @@ export const ThankYouPage: React.FC = () => {
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: 120,
-                      height: 120,
+                      width: 'auto',
+                      height: 'auto',
                       borderRadius: '50%',
                       background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
                       marginBottom: 3,
@@ -273,12 +273,12 @@ export const ThankYouPage: React.FC = () => {
             </Slide>
 
             <Slide direction="up" in={showButton} timeout={1000}>
-              <Stack spacing={3} alignItems="center">
+              <Stack spacing={2} alignItems="center">
                 {/* Rejoin Call Button - Primary Action */}
                 <Zoom in={showButton} timeout={1200}>
                   <Button
                   variant="contained"
-                  size="large"
+                  size="medium"
                   onClick={handleRejoinCall}
                   startIcon={<Videocam />}
                   endIcon={<People />}
@@ -310,7 +310,7 @@ export const ThankYouPage: React.FC = () => {
                 {/* Portfolio Button - Secondary Action */}
                 <Button
                   variant="contained"
-                  size="large"
+                  size="medium"
                   onClick={handlePortfolioClick}
                   endIcon={<Launch />}
                   sx={{

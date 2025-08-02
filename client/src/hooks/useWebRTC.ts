@@ -23,11 +23,19 @@ const getWebSocketUrl = () => {
   
   // For development, use localhost:5000
   if (host.includes('localhost') || host.includes('127.0.0.1')) {
-    const serverUrl = 'https://live-cam.onrender.com';
+    return 'ws://localhost:5000';
+  }
+  
+  // For production, use the backend server URL
+  // You'll need to set REACT_APP_SERVER_URL in your Vercel environment variables
+  const serverUrl = process.env.REACT_APP_SERVER_URL;
+  if (serverUrl) {
     return serverUrl.replace('http:', 'ws:').replace('https:', 'wss:');
   }
   
-  return `${protocol}//${host}`;
+  // Fallback - this should be your backend server URL
+  console.warn('No REACT_APP_SERVER_URL set, using fallback');
+  return 'wss://live-cam.onrender.com'; // Replace with your actual backend URL
 };
 
 export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
@@ -266,6 +274,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
 
     ws.onopen = () => {
       console.log('✅ WebSocket connected successfully!');
+      console.log('🔗 WebSocket URL:', wsUrl);
       setConnectionStatus({
         status: 'connected',
         message: 'Connected to server'

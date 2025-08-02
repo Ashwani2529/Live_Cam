@@ -285,14 +285,14 @@ export const ThankYouPage: React.FC = () => {
                   sx={{
                     background: 'linear-gradient(45deg, #4CAF50 30%, #45A049 90%)',
                     color: 'white',
-                    padding: '18px 40px',
-                    fontSize: '1.3rem',
+                    padding: isMobile ? '12px 24px' : '16px 32px',
+                    fontSize: isMobile ? '1rem' : '1.2rem',
                     fontWeight: 'bold',
                     borderRadius: '50px',
                     textTransform: 'none',
                     boxShadow: '0 8px 32px rgba(76, 175, 80, 0.4)',
                     transition: 'all 0.3s ease',
-                    minWidth: '280px',
+                    minWidth: isMobile ? '200px' : '240px',
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(76, 175, 80, 0.6)',
@@ -303,20 +303,9 @@ export const ThankYouPage: React.FC = () => {
                     },
                   }}
                                   >
-                    Rejoin Group Video Call
+                    Rejoin
                   </Button>
                 </Zoom>
-
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.8)',
-                    fontStyle: 'italic',
-                    marginTop: '-8px !important',
-                  }}
-                >
-                  Continue the conversation with friends! 🎥
-                </Typography>
 
                 {/* Portfolio Button - Secondary Action */}
                 <Button
@@ -327,13 +316,14 @@ export const ThankYouPage: React.FC = () => {
                   sx={{
                     background: 'linear-gradient(45deg, #FF6B6B 30%, #FF8E53 90%)',
                     color: 'white',
-                    padding: '16px 32px',
-                    fontSize: '1.1rem',
+                    padding: isMobile ? '12px 24px' : '16px 32px',
+                    fontSize: isMobile ? '0.95rem' : '1.1rem',
                     fontWeight: 'bold',
                     borderRadius: '50px',
                     textTransform: 'none',
                     boxShadow: '0 8px 32px rgba(255, 107, 107, 0.4)',
                     transition: 'all 0.3s ease',
+                    minWidth: isMobile ? '200px' : 'auto',
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(255, 107, 107, 0.6)',
@@ -345,67 +335,6 @@ export const ThankYouPage: React.FC = () => {
                   }}
                 >
                   View Developer's Profile
-                </Button>
-
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    fontStyle: 'italic',
-                  }}
-                >
-                  Click to explore more amazing projects!
-                </Typography>
-
-                {/* Social Links */}
-                <Stack direction="row" spacing={2} sx={{ marginTop: 3 }}>
-                  {[
-                    { icon: <GitHub />, label: 'GitHub' },
-                    { icon: <LinkedIn />, label: 'LinkedIn' },
-                    { icon: <Email />, label: 'Email' },
-                  ].map((social, index) => (
-                    <Zoom in={showButton} timeout={1200 + index * 200} key={social.label}>
-                      <IconButton
-                        sx={{
-                          background: 'rgba(255, 255, 255, 0.1)',
-                          color: 'white',
-                          border: '1px solid rgba(255, 255, 255, 0.2)',
-                          transition: 'all 0.3s ease',
-                          '&:hover': {
-                            background: 'rgba(255, 255, 255, 0.2)',
-                            transform: 'translateY(-2px)',
-                            boxShadow: '0 8px 25px rgba(255, 255, 255, 0.2)',
-                          },
-                        }}
-                        onClick={handlePortfolioClick}
-                      >
-                        {social.icon}
-                      </IconButton>
-                    </Zoom>
-                  ))}
-                </Stack>
-
-                {/* Alternative Action - Start New Call */}
-                <Button
-                  variant="text"
-                  onClick={handleBackToCall}
-                  endIcon={<ArrowForward />}
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.8)',
-                    marginTop: 1,
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    textTransform: 'none',
-                    fontSize: '0.9rem',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      color: 'white',
-                      background: 'rgba(255, 255, 255, 0.1)',
-                      transform: 'translateY(-1px)',
-                    },
-                  }}
-                >
-                  Start New Call Instead
                 </Button>
               </Stack>
             </Slide>

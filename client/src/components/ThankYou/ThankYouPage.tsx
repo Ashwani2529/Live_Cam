@@ -111,6 +111,7 @@ export const ThankYouPage: React.FC = () => {
     <Box
       sx={{
         minHeight: '100vh',
+        height: isMobile ? '100vh' : 'auto',
         background: `
           linear-gradient(-45deg, 
             #1e3c72, #2a5298, #667eea, #764ba2, 
@@ -122,7 +123,8 @@ export const ThankYouPage: React.FC = () => {
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
-        overflow: 'hidden',
+        overflow: isMobile ? 'auto' : 'hidden',
+        padding: isMobile ? '16px' : '0',
       }}
     >
       {/* Particle Background */}
@@ -187,12 +189,17 @@ export const ThankYouPage: React.FC = () => {
         <Celebration sx={{ fontSize: '80px', color: 'white' }} />
       </Box>
 
-      <Container maxWidth="md">
+      <Container maxWidth="md" sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        minHeight: isMobile ? '100%' : 'auto',
+      }}>
         <Fade in={showContent} timeout={1000}>
           <Paper
             elevation={24}
             sx={{
-              padding: isMobile ? 4 : 6,
+              padding: isMobile ? 2 : 6,
               textAlign: 'center',
               background: 'rgba(255, 255, 255, 0.1)',
               backdropFilter: 'blur(20px)',
@@ -201,6 +208,11 @@ export const ThankYouPage: React.FC = () => {
               animation: `${pulseGlow} 3s ease-in-out infinite`,
               position: 'relative',
               overflow: 'hidden',
+              width: '100%',
+              maxHeight: isMobile ? '90vh' : 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
             }}
           >
             {/* Animated background pattern */}
@@ -228,20 +240,20 @@ export const ThankYouPage: React.FC = () => {
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: 'auto',
-                      height: 'auto',
+                      width: isMobile ? 80 : 120,
+                      height: isMobile ? 80 : 120,
                       borderRadius: '50%',
                       background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
-                      marginBottom: 3,
+                      marginBottom: isMobile ? 1.5 : 3,
                       animation: `${floatingAnimation} 3s ease-in-out infinite`,
                     }}
                   >
-                    <Favorite sx={{ fontSize: '60px', color: 'white' }} />
+                    <Favorite sx={{ fontSize: isMobile ? '40px' : '60px', color: 'white' }} />
                   </Box>
                 </Zoom>
 
                 <Typography
-                  variant={isMobile ? 'h3' : 'h2'}
+                  variant={isMobile ? 'h4' : 'h2'}
                   component="h1"
                   sx={{
                     fontWeight: 'bold',
@@ -249,7 +261,7 @@ export const ThankYouPage: React.FC = () => {
                     backgroundClip: 'text',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
-                    marginBottom: 2,
+                    marginBottom: isMobile ? 1 : 2,
                     textShadow: '0 2px 4px rgba(0,0,0,0.3)',
                   }}
                 >
@@ -257,12 +269,13 @@ export const ThankYouPage: React.FC = () => {
                 </Typography>
 
                 <Typography
-                  variant={isMobile ? 'h6' : 'h5'}
+                  variant={isMobile ? 'body1' : 'h5'}
                   sx={{
                     color: 'rgba(255, 255, 255, 0.9)',
-                    marginBottom: 4,
+                    marginBottom: isMobile ? 2 : 4,
                     fontWeight: 300,
                     lineHeight: 1.6,
+                    fontSize: isMobile ? '1rem' : undefined,
                   }}
                 >
                   For joining our amazing Group Video Chat App!
@@ -273,7 +286,7 @@ export const ThankYouPage: React.FC = () => {
             </Slide>
 
             <Slide direction="up" in={showButton} timeout={1000}>
-              <Stack spacing={2} alignItems="center">
+              <Stack spacing={isMobile ? 1.5 : 2} alignItems="center">
                 {/* Rejoin Call Button - Primary Action */}
                 <Zoom in={showButton} timeout={1200}>
                   <Button
@@ -285,14 +298,16 @@ export const ThankYouPage: React.FC = () => {
                   sx={{
                     background: 'linear-gradient(45deg, #4CAF50 30%, #45A049 90%)',
                     color: 'white',
-                    padding: isMobile ? '12px 24px' : '16px 32px',
-                    fontSize: isMobile ? '1rem' : '1.2rem',
+                    padding: isMobile ? '10px 20px' : '16px 32px',
+                    fontSize: isMobile ? '0.9rem' : '1.2rem',
                     fontWeight: 'bold',
                     borderRadius: '50px',
                     textTransform: 'none',
                     boxShadow: '0 8px 32px rgba(76, 175, 80, 0.4)',
                     transition: 'all 0.3s ease',
-                    minWidth: isMobile ? '200px' : '240px',
+                    minWidth: isMobile ? '180px' : '240px',
+                    width: isMobile ? '100%' : 'auto',
+                    maxWidth: isMobile ? '280px' : 'none',
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(76, 175, 80, 0.6)',
@@ -316,14 +331,16 @@ export const ThankYouPage: React.FC = () => {
                   sx={{
                     background: 'linear-gradient(45deg, #FF6B6B 30%, #FF8E53 90%)',
                     color: 'white',
-                    padding: isMobile ? '12px 24px' : '16px 32px',
-                    fontSize: isMobile ? '0.95rem' : '1.1rem',
+                    padding: isMobile ? '10px 20px' : '16px 32px',
+                    fontSize: isMobile ? '0.85rem' : '1.1rem',
                     fontWeight: 'bold',
                     borderRadius: '50px',
                     textTransform: 'none',
                     boxShadow: '0 8px 32px rgba(255, 107, 107, 0.4)',
                     transition: 'all 0.3s ease',
-                    minWidth: isMobile ? '200px' : 'auto',
+                    minWidth: isMobile ? '180px' : 'auto',
+                    width: isMobile ? '100%' : 'auto',
+                    maxWidth: isMobile ? '280px' : 'none',
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(255, 107, 107, 0.6)',

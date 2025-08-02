@@ -217,6 +217,13 @@ wss.on('connection', (ws) => {
           }
           break;
 
+        case 'heartbeat':
+          // Respond to heartbeat to keep connection alive
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'heartbeat-ack', id: data.id }));
+          }
+          break;
+
         default:
           console.warn('Unknown message type:', data.type);
       }

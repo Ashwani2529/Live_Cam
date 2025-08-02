@@ -277,25 +277,37 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
         id: userIdRef.current,
         roomId: currentRoomRef.current
       }));
+
+      // Send periodic heartbeat to keep connection alive
+      const heartbeat = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'heartbeat', id: userIdRef.current }));
+        } else {
+          clearInterval(heartbeat);
+        }
+      }, 30000); // Send heartbeat every 30 seconds
+
+      // Store heartbeat interval for cleanup
+      (ws as any).heartbeatInterval = heartbeat;
     };
 
-    ws.onclose = (event) => {
+        ws.onclose = (event) => {
       console.log('⚠️ WebSocket disconnected:', event.code, event.reason);
       setConnectionStatus({
         status: 'disconnected',
         message: `Disconnected: ${event.reason || 'Connection lost'}`
       });
       
-             // Auto-reconnect after a delay if not a clean close
-       if (event.code !== 1000 && event.code !== 1001) {
-         setTimeout(() => {
-           if (wsRef.current?.readyState === WebSocket.CLOSED) {
-             console.log('🔄 Attempting to reconnect...');
-             wsRef.current = null; // Clear the reference before reconnecting
-             initializeWebSocket();
-           }
-         }, 3000);
-       }
+      // Auto-reconnect after a delay if not a clean close
+      if (event.code !== 1000 && event.code !== 1001) {
+        setTimeout(() => {
+          if (wsRef.current?.readyState === WebSocket.CLOSED) {
+            console.log('🔄 Attempting to reconnect...');
+            wsRef.current = null; // Clear the reference before reconnecting
+            initializeWebSocket();
+          }
+        }, 1000); // Reduced to 1 second for faster reconnection
+      }
     };
 
     ws.onerror = (error) => {
@@ -315,9 +327,18 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
           case 'existing-participants':
             console.log('📡 Existing participants:', data.participants);
             
-            for (const peerId of data.participants) {
-              if (peerId !== userIdRef.current) {
-                await setupPeerConnection(peerId, true);
+            if (data.participants && data.participants.length > 0) {
+              console.log(`🔄 Connecting to ${data.participants.length} existing participants...`);
+              setConnectionStatus({
+                status: 'loading-participants',
+                message: `Connecting to ${data.participants.length} participant${data.participants.length !== 1 ? 's' : ''}...`
+              });
+              
+              for (const peerId of data.participants) {
+                if (peerId !== userIdRef.current) {
+                  console.log(`🔗 Setting up connection with ${peerId}`);
+                  await setupPeerConnection(peerId, true);
+                }
               }
             }
             break;
@@ -394,6 +415,11 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
               message: data.message,
               participantCount: data.participantCount
             });
+            
+            // If we're the first participant, keep checking for others
+            if (data.participantCount === 1) {
+              console.log('👤 First participant, waiting for others...');
+            }
             break;
 
           case 'error':
@@ -402,6 +428,10 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
               status: 'disconnected',
               message: data.message
             });
+            break;
+
+          case 'heartbeat-ack':
+            console.log('💓 Heartbeat acknowledged');
             break;
 
           default:
@@ -573,6 +603,10 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       peerConnectionsRef.current.clear();
       
       if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+        // Clear heartbeat interval
+        if ((wsRef.current as any).heartbeatInterval) {
+          clearInterval((wsRef.current as any).heartbeatInterval);
+        }
         wsRef.current.close(1000, 'Component unmounted');
         wsRef.current = null;
       }

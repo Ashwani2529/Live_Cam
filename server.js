@@ -35,6 +35,20 @@ wss.on('connection', (ws) => {
                     // Check if this user was already connected (reconnection scenario)
                     const wasAlreadyConnected = clients.has(userId);
                     
+                    // If this user was already connected, notify other clients to clean up old connections
+                    if (wasAlreadyConnected) {
+                        console.log(`🧹 User ${userId} reconnecting, notifying peers to cleanup old connections`);
+                        clients.forEach((client, peerId) => {
+                            if (peerId !== userId && client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({
+                                    type: 'peer-reconnecting',
+                                    peerId: userId,
+                                    timestamp: Date.now()
+                                }));
+                            }
+                        });
+                    }
+                    
                     // Set/update the client connection
                     clients.set(userId, ws);
                     

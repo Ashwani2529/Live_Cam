@@ -463,12 +463,25 @@
     <div class="help-overlay" id="helpOverlay" style="display: none;">
         <div class="help-content">
             <h3>Not seeing other participants?</h3>
-            <p>Try these options:</p>
+            <p>Try these debugging options:</p>
             <ul>
                 <li><strong>Mobile:</strong> Double-tap anywhere to refresh</li>
                 <li><strong>Desktop:</strong> Press Ctrl+Shift+R</li>
-                <li><strong>Console:</strong> Type <code>videoCallDebug.refreshParticipants()</code></li>
+                <li><strong>Console Quick Fixes:</strong>
+                    <ul style="margin-top: 8px;">
+                        <li><code>videoCallDebug.fixStreams()</code> - Fix video streams</li>
+                        <li><code>videoCallDebug.refreshParticipants()</code> - Refresh connections</li>
+                        <li><code>videoCallDebug.hardReset()</code> - Force reconnect all</li>
+                        <li><code>videoCallDebug.logState()</code> - Show debug info</li>
+                    </ul>
+                </li>
             </ul>
+            <div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 12px;">
+                <strong>Common Issues:</strong><br>
+                • Reload page → only see yourself → try <code>fixStreams()</code><br>
+                • Empty video tiles → try <code>refreshParticipants()</code><br>
+                • Connection stuck → try <code>hardReset()</code>
+            </div>
             <button onclick="document.getElementById('helpOverlay').style.display='none'">Close</button>
         </div>
     </div>

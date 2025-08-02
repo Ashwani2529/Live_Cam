@@ -192,6 +192,33 @@ signalingServer.onmessage = async (message) => {
                 updatePeerMediaState(data.peerId, data.mediaState);
                 break;
 
+            case 'peer-reconnecting':
+                const reconnectingPeerId = data.peerId;
+                console.log(`🔄 Peer ${reconnectingPeerId} is reconnecting - cleaning up old connection`);
+                
+                // Clean up the old connection and video element
+                if (peerConnections[reconnectingPeerId]) {
+                    console.log(`🗑️ Closing old connection to ${reconnectingPeerId}`);
+                    peerConnections[reconnectingPeerId].close();
+                    delete peerConnections[reconnectingPeerId];
+                }
+                
+                if (videoElements[reconnectingPeerId]) {
+                    console.log(`🗑️ Removing old video element for ${reconnectingPeerId}`);
+                    videoElements[reconnectingPeerId].wrapper.remove();
+                    delete videoElements[reconnectingPeerId];
+                }
+                
+                // Remove from participants - they'll be re-added when new connection is established
+                participants.delete(reconnectingPeerId);
+                updateVideoGrid();
+                break;
+
+            case 'room-status':
+                console.log('📢 Room status:', data.message);
+                updateConnectionStatus('connected', data.message);
+                break;
+
             default:
                 console.warn('Unknown message type:', data.type);
         }
@@ -247,6 +274,31 @@ async function initializeApp() {
         
         // Set up periodic connection health check
         setInterval(checkConnectionHealth, 30000);
+        
+        // Set up periodic stream verification
+        setInterval(() => {
+            if (participants.size > 1) {
+                console.log('🔍 Periodic stream verification...');
+                
+                let needsFixing = false;
+                Object.keys(videoElements).forEach(peerId => {
+                    if (peerId !== userId) {
+                        const videoEl = videoElements[peerId].video;
+                        if (videoEl.srcObject && videoEl.videoWidth === 0) {
+                            const videoTracks = videoEl.srcObject.getVideoTracks();
+                            if (videoTracks.some(t => t.readyState === 'live')) {
+                                console.log(`⚠️ Stream issue detected for ${peerId} - will auto-fix`);
+                                needsFixing = true;
+                            }
+                        }
+                    }
+                });
+                
+                if (needsFixing) {
+                    setTimeout(verifyVideoStreams, 1000);
+                }
+            }
+        }, 10000); // Check every 10 seconds
         
         // Show help overlay if user is alone for too long
         setTimeout(() => {
@@ -364,20 +416,46 @@ function createVideoElement(participantId, stream, isLocal = false) {
     });
     
     // Set stream after event listeners are attached
-    if (stream) {
+    if (stream && stream.getTracks().length > 0) {
+        console.log(`🎬 Setting stream for ${participantId}`);
+        console.log(`📊 Stream tracks: ${stream.getTracks().map(t => `${t.kind}:${t.enabled}`).join(', ')}`);
+        
         video.srcObject = stream;
-        console.log(`Set srcObject for ${participantId}, tracks:`, stream.getTracks().length);
+        
+        // Verify stream is active
+        const activeTracks = stream.getTracks().filter(t => t.readyState === 'live');
+        if (activeTracks.length === 0) {
+            console.warn(`⚠️ All tracks inactive for ${participantId}`);
+        } else {
+            console.log(`✅ ${activeTracks.length} active tracks for ${participantId}`);
+        }
+        
+        // Try to play the video immediately for remote streams
+        if (!isLocal) {
+            video.play().catch(e => {
+                console.log(`⚠️ Auto-play failed for ${participantId}: ${e.message}`);
+            });
+        }
         
         // Timeout fallback to remove loading state if video doesn't load
         setTimeout(() => {
             if (videoWrapper.classList.contains('loading')) {
-                console.warn(`Video loading timeout for ${participantId}`);
-                videoWrapper.classList.remove('loading');
-                videoWrapper.classList.add('no-video');
+                console.warn(`⏰ Video loading timeout for ${participantId}`);
+                console.log(`📊 Video state: ${video.readyState}, dimensions: ${video.videoWidth}x${video.videoHeight}`);
+                
+                if (video.videoWidth > 0) {
+                    // Video has dimensions but still loading - probably just slow
+                    videoWrapper.classList.remove('loading');
+                    videoWrapper.classList.add('loaded');
+                } else {
+                    // No dimensions - likely a problem
+                    videoWrapper.classList.remove('loading');
+                    videoWrapper.classList.add('no-video');
+                }
             }
         }, 5000);
     } else {
-        console.warn(`No stream provided for ${participantId}`);
+        console.warn(`❌ No valid stream provided for ${participantId}`);
         videoWrapper.classList.remove('loading');
         videoWrapper.classList.add('no-video');
     }
@@ -435,7 +513,21 @@ function createVideoElement(participantId, stream, isLocal = false) {
 // Setup peer connection
 async function setupPeerConnection(peerId, isInitiator) {
     try {
-        console.log(`Setting up peer connection with ${peerId}, isInitiator: ${isInitiator}`);
+        console.log(`🔗 Setting up peer connection with ${peerId}, isInitiator: ${isInitiator}`);
+        
+        // Clean up any existing connection for this peer first
+        if (peerConnections[peerId]) {
+            console.log(`🧹 Cleaning up existing connection for ${peerId}`);
+            peerConnections[peerId].close();
+            delete peerConnections[peerId];
+        }
+        
+        // Also clean up video element if it exists
+        if (videoElements[peerId]) {
+            console.log(`🧹 Cleaning up existing video element for ${peerId}`);
+            videoElements[peerId].wrapper.remove();
+            delete videoElements[peerId];
+        }
         
         const pc = new RTCPeerConnection({
             iceServers: [
@@ -448,6 +540,7 @@ async function setupPeerConnection(peerId, isInitiator) {
         });
 
         peerConnections[peerId] = pc;
+        console.log(`✅ Created peer connection for ${peerId}`);
 
         // Add local stream tracks
         if (localStream && localStream.getTracks().length > 0) {
@@ -489,56 +582,132 @@ async function setupPeerConnection(peerId, isInitiator) {
 
         // Handle incoming stream
         pc.ontrack = (event) => {
-            console.log('Received remote stream from:', peerId, 'Stream tracks:', event.streams[0].getTracks().length);
-            event.streams[0].getTracks().forEach((track, index) => {
-                console.log(`Remote track ${index}: ${track.kind} - enabled: ${track.enabled}`);
-            });
+            console.log(`🎥 ONTRACK EVENT for ${peerId}`);
+            console.log(`📺 Stream ID: ${event.streams[0].id}`);
+            console.log(`🎵 Stream tracks: ${event.streams[0].getTracks().length}`);
             
             const remoteStream = event.streams[0];
             
+            event.streams[0].getTracks().forEach((track, index) => {
+                console.log(`🎬 Track ${index}: ${track.kind} - enabled: ${track.enabled} - readyState: ${track.readyState}`);
+            });
+            
             // Add participant to list if not already there
             if (!participants.has(peerId)) {
+                console.log(`➕ Adding ${peerId} to participants list`);
                 participants.add(peerId);
             }
             
-            if (!videoElements[peerId]) {
-                console.log(`Creating new video element for remote peer ${peerId}`);
-                createVideoElement(peerId, remoteStream, false);
-                updateVideoGrid();
-            } else {
-                console.log('Updating existing video element for', peerId);
-                const videoElement = videoElements[peerId].video;
-                videoElement.srcObject = remoteStream;
-                
-                // Update loading state
-                const wrapper = videoElements[peerId].wrapper;
-                wrapper.classList.add('loading');
-                wrapper.classList.remove('loaded', 'no-video');
+            // Force cleanup of any existing video element first
+            if (videoElements[peerId]) {
+                console.log(`🧹 Cleaning up existing video element for ${peerId}`);
+                const oldWrapper = videoElements[peerId].wrapper;
+                if (oldWrapper.parentNode) {
+                    oldWrapper.remove();
+                }
+                delete videoElements[peerId];
             }
             
-            // Ensure the remote stream is properly connected
+            // Always create a fresh video element
+            console.log(`🆕 Creating fresh video element for remote peer ${peerId}`);
+            createVideoElement(peerId, remoteStream, false);
+            
+            // Verify stream assignment immediately
             setTimeout(() => {
-                if (videoElements[peerId] && videoElements[peerId].video.srcObject) {
-                    console.log(`Remote stream confirmed for ${peerId}`);
-                    updateVideoGrid(); // Refresh layout
+                const videoEl = videoElements[peerId]?.video;
+                if (videoEl) {
+                    if (videoEl.srcObject) {
+                        console.log(`✅ Stream successfully assigned to ${peerId}`);
+                        console.log(`📊 Video dimensions: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+                        console.log(`▶️ Video ready state: ${videoEl.readyState}`);
+                        
+                        // Force a play attempt
+                        videoEl.play().catch(e => {
+                            console.log(`⚠️ Play failed for ${peerId}:`, e.message);
+                        });
+                    } else {
+                        console.error(`❌ Stream NOT assigned to ${peerId} - retrying...`);
+                        videoEl.srcObject = remoteStream;
+                    }
+                } else {
+                    console.error(`❌ Video element not found for ${peerId}`);
                 }
-            }, 1000);
+                updateVideoGrid();
+            }, 100);
+            
+            // Secondary verification after 2 seconds
+            setTimeout(() => {
+                const videoEl = videoElements[peerId]?.video;
+                if (videoEl && videoEl.srcObject) {
+                    if (videoEl.videoWidth === 0) {
+                        console.warn(`⚠️ Video element for ${peerId} has no dimensions - stream might be inactive`);
+                        // Try to refresh the stream
+                        videoEl.srcObject = null;
+                        setTimeout(() => {
+                            videoEl.srcObject = remoteStream;
+                        }, 100);
+                    } else {
+                        console.log(`✅ Video fully loaded for ${peerId}: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+                    }
+                } else {
+                    console.error(`❌ Video element or stream missing for ${peerId} after 2 seconds`);
+                }
+            }, 2000);
         };
 
         // Handle connection state changes
         pc.onconnectionstatechange = () => {
-            console.log(`Connection state with ${peerId}:`, pc.connectionState);
-            if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                console.log(`Peer ${peerId} connection failed or disconnected`);
+            console.log(`🔗 Connection state with ${peerId}: ${pc.connectionState}`);
+            
+            if (pc.connectionState === 'connected') {
+                console.log(`✅ Successfully connected to peer ${peerId}`);
+                // Update connection status
+                const connectedPeers = Object.keys(peerConnections).filter(p => 
+                    peerConnections[p].connectionState === 'connected'
+                ).length;
+                updateConnectionStatus('connected', `Connected to ${connectedPeers} peer${connectedPeers !== 1 ? 's' : ''}`);
+                
+            } else if (pc.connectionState === 'failed') {
+                console.log(`❌ Connection to ${peerId} failed - attempting retry`);
+                
+                // Retry connection after a short delay
+                setTimeout(async () => {
+                    if (participants.has(peerId) && !peerConnections[peerId]) {
+                        console.log(`🔄 Retrying connection to ${peerId}`);
+                        try {
+                            await setupPeerConnection(peerId, true);
+                        } catch (error) {
+                            console.error(`❌ Retry failed for ${peerId}:`, error);
+                        }
+                    }
+                }, 2000);
+                
+                // Clean up failed connection
                 handlePeerDisconnection(peerId);
-            } else if (pc.connectionState === 'connected') {
-                console.log(`Successfully connected to peer ${peerId}`);
+                
+            } else if (pc.connectionState === 'disconnected') {
+                console.log(`🔌 Peer ${peerId} disconnected`);
+                // Give some time for reconnection before cleanup
+                setTimeout(() => {
+                    if (pc.connectionState === 'disconnected') {
+                        console.log(`🚪 Cleaning up disconnected peer ${peerId}`);
+                        handlePeerDisconnection(peerId);
+                    }
+                }, 5000);
             }
         };
 
         // Handle ICE connection state changes
         pc.oniceconnectionstatechange = () => {
-            console.log(`ICE connection state with ${peerId}:`, pc.iceConnectionState);
+            console.log(`🧊 ICE connection state with ${peerId}: ${pc.iceConnectionState}`);
+            
+            if (pc.iceConnectionState === 'failed') {
+                console.log(`❄️ ICE connection to ${peerId} failed`);
+                // ICE restart might help
+                pc.restartIce();
+            } else if (pc.iceConnectionState === 'disconnected') {
+                console.log(`❄️ ICE disconnected from ${peerId}`);
+            }
         };
 
         // Create offer if initiator
@@ -667,17 +836,22 @@ async function handleSignalingMessage(data) {
 
 // Handle peer disconnection
 async function handlePeerDisconnection(peerId) {
+    console.log(`🚪 Handling disconnection for peer: ${peerId}`);
+    
     if (peerConnections[peerId]) {
+        console.log(`🔌 Closing peer connection for ${peerId}`);
         peerConnections[peerId].close();
         delete peerConnections[peerId];
     }
     
     if (videoElements[peerId]) {
+        console.log(`🗑️ Removing video element for ${peerId}`);
         videoElements[peerId].wrapper.remove();
         delete videoElements[peerId];
     }
     
     participants.delete(peerId);
+    console.log(`👥 Participants after removal: ${Array.from(participants)}`);
     updateVideoGrid();
 }
 
@@ -1031,6 +1205,95 @@ function refreshParticipants() {
     }
 }
 
+// Verify and fix video streams
+function verifyVideoStreams() {
+    console.log('🔍 Verifying video streams...');
+    
+    Object.keys(videoElements).forEach(peerId => {
+        const videoEl = videoElements[peerId].video;
+        const wrapper = videoElements[peerId].wrapper;
+        
+        console.log(`📹 Checking ${peerId}:`);
+        console.log(`  - Has srcObject: ${!!videoEl.srcObject}`);
+        console.log(`  - Video dimensions: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+        console.log(`  - Ready state: ${videoEl.readyState}`);
+        console.log(`  - Paused: ${videoEl.paused}`);
+        console.log(`  - Current time: ${videoEl.currentTime}`);
+        
+        if (videoEl.srcObject) {
+            const tracks = videoEl.srcObject.getTracks();
+            console.log(`  - Stream tracks: ${tracks.length}`);
+            tracks.forEach((track, i) => {
+                console.log(`    Track ${i}: ${track.kind} - ${track.readyState} - enabled: ${track.enabled}`);
+            });
+            
+            // Try to fix streams that aren't displaying
+            if (videoEl.videoWidth === 0 && tracks.some(t => t.kind === 'video' && t.readyState === 'live')) {
+                console.log(`🔧 Attempting to fix stream for ${peerId}`);
+                
+                // Force refresh the stream
+                const currentStream = videoEl.srcObject;
+                videoEl.srcObject = null;
+                setTimeout(() => {
+                    videoEl.srcObject = currentStream;
+                    videoEl.play().catch(e => console.log(`Play failed: ${e.message}`));
+                }, 100);
+                
+                // Update loading state
+                wrapper.classList.add('loading');
+                wrapper.classList.remove('loaded', 'no-video');
+                
+                // Check again after refresh
+                setTimeout(() => {
+                    if (videoEl.videoWidth > 0) {
+                        console.log(`✅ Fixed stream for ${peerId}`);
+                        wrapper.classList.remove('loading');
+                        wrapper.classList.add('loaded');
+                    } else {
+                        console.log(`❌ Could not fix stream for ${peerId}`);
+                        wrapper.classList.remove('loading');
+                        wrapper.classList.add('no-video');
+                    }
+                }, 2000);
+            }
+        } else {
+            console.log(`❌ No stream for ${peerId}`);
+        }
+    });
+}
+
+// Force reconnect to all peers
+function forceReconnectAll() {
+    console.log('🔄 Force reconnecting to all peers...');
+    
+    const peersToReconnect = Array.from(participants).filter(p => p !== userId);
+    
+    console.log(`🔗 Reconnecting to: ${peersToReconnect.join(', ')}`);
+    
+    // Close all existing connections
+    Object.keys(peerConnections).forEach(peerId => {
+        console.log(`🔌 Closing connection to ${peerId}`);
+        peerConnections[peerId].close();
+        delete peerConnections[peerId];
+    });
+    
+    // Remove all video elements except local
+    Object.keys(videoElements).forEach(peerId => {
+        if (peerId !== userId) {
+            console.log(`🗑️ Removing video element for ${peerId}`);
+            videoElements[peerId].wrapper.remove();
+            delete videoElements[peerId];
+        }
+    });
+    
+    // Clear participants except self
+    participants.clear();
+    participants.add(userId);
+    
+    // Re-register to get fresh connections
+    refreshParticipants();
+}
+
 // Layout preview function for testing different breakpoints
 function previewLayoutForBreakpoints() {
     if (!participants.size) return;
@@ -1160,13 +1423,26 @@ window.videoCallDebug = {
     previewLayouts: previewLayoutForBreakpoints,
     updateGrid: updateVideoGrid,
     refreshParticipants: refreshParticipants,
+    verifyStreams: verifyVideoStreams,
+    forceReconnectAll: forceReconnectAll,
     participants: () => Array.from(participants),
     videoElements: () => Object.keys(videoElements),
     connections: () => Object.keys(peerConnections).map(peerId => ({
         peerId,
         connectionState: peerConnections[peerId].connectionState,
-        iceConnectionState: peerConnections[peerId].iceConnectionState
-    }))
+        iceConnectionState: peerConnections[peerId].iceConnectionState,
+        signalingState: peerConnections[peerId].signalingState
+    })),
+    // Quick fixes
+    fixStreams: () => {
+        console.log('🔧 Running quick stream fixes...');
+        verifyVideoStreams();
+        setTimeout(updateVideoGrid, 1000);
+    },
+    hardReset: () => {
+        console.log('💥 Performing hard reset...');
+        forceReconnectAll();
+    }
 };
 
 // Add double-tap listener for mobile refresh
@@ -1188,5 +1464,51 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         console.log('⌨️ Keyboard shortcut detected - refreshing participants');
         refreshParticipants();
+    }
+});
+
+// Handle page visibility changes (useful for detecting when user returns after reload)
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && signalingServer.readyState === WebSocket.OPEN) {
+        console.log('👁️ Page became visible - checking connections');
+        
+        // Give a moment for everything to settle, then check connections
+        setTimeout(() => {
+            const connectedPeers = Object.keys(peerConnections).filter(peerId => 
+                peerConnections[peerId].connectionState === 'connected'
+            );
+            
+            const participantCount = participants.size - 1; // Exclude self
+            
+            if (participantCount > 0 && connectedPeers.length < participantCount) {
+                console.log(`⚠️ Expected ${participantCount} connections but only have ${connectedPeers.length} - refreshing`);
+                refreshParticipants();
+            }
+        }, 2000);
+    }
+});
+
+// Handle before page unload to clean up connections
+window.addEventListener('beforeunload', () => {
+    console.log('🚪 Page unloading - cleaning up connections');
+    
+    // Close all peer connections
+    Object.values(peerConnections).forEach(pc => {
+        try {
+            pc.close();
+        } catch (e) {
+            console.log('Error closing connection:', e);
+        }
+    });
+    
+    // Stop local stream
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            try {
+                track.stop();
+            } catch (e) {
+                console.log('Error stopping track:', e);
+            }
+        });
     }
 });

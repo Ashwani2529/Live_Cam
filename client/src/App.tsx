@@ -1,6 +1,8 @@
 import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { VideoCall } from './components/VideoCall/VideoCall';
+import { ThankYouPage } from './components/ThankYou/ThankYouPage';
 
 // Create Material-UI theme
 const theme = createTheme({
@@ -52,8 +54,9 @@ const theme = createTheme({
 
 const App: React.FC = () => {
   const handleLeave = () => {
-    // In a real app, you might redirect to a different page
-    window.location.reload();
+    console.log('User left the call');
+    // Redirect to thank you page
+    window.location.href = '/thank-you';
   };
 
   const handleError = (error: string) => {
@@ -64,11 +67,21 @@ const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <VideoCall
-        roomId="default-room"
-        onLeave={handleLeave}
-        onError={handleError}
-      />
+      <Router>
+        <Routes>
+          <Route 
+            path="/" 
+            element={
+              <VideoCall
+                roomId="default-room"
+                onLeave={handleLeave}
+                onError={handleError}
+              />
+            } 
+          />
+          <Route path="/thank-you" element={<ThankYouPage />} />
+        </Routes>
+      </Router>
     </ThemeProvider>
   );
 };

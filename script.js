@@ -4,7 +4,19 @@ const audioBtn = document.getElementById('audioBtn');
 const leaveBtn = document.getElementById('leaveBtn');
 const connectionStatus = document.getElementById('connectionStatus');
 
-const signalingServer = new WebSocket('wss://live-cam.onrender.com');
+// Dynamic WebSocket URL based on current domain
+const getWebSocketUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    
+    // Use the same domain for WebSocket or fallback to render.com
+    if (host.includes('vercel.app') || host.includes('localhost') || host.includes('127.0.0.1')) {
+        return 'wss://live-cam.onrender.com';
+    }
+    return `${protocol}//${host}`;
+};
+
+const signalingServer = new WebSocket(getWebSocketUrl());
 const peerConnections = {};
 const videoElements = {};
 const userId = Math.random().toString(36).substring(7);
@@ -13,6 +25,9 @@ let localStream = null;
 let isVideoEnabled = true;
 let isAudioEnabled = true;
 let participants = new Set();
+
+console.log('Connecting to WebSocket:', getWebSocketUrl());
+console.log('User ID:', userId);
 
 // WebSocket event handlers
 signalingServer.onopen = () => {
@@ -32,11 +47,13 @@ signalingServer.onerror = (error) => {
 };
 
 signalingServer.onmessage = async (message) => {
-    const data = JSON.parse(message.data);
-
     try {
+        const data = JSON.parse(message.data);
+        console.log('Received WebSocket message:', data.type, data);
+
         switch (data.type) {
             case 'existing-participants':
+                console.log('Existing participants:', data.participants);
                 for (const peerId of data.participants) {
                     if (peerId !== userId) {
                         participants.add(peerId);
@@ -48,6 +65,7 @@ signalingServer.onmessage = async (message) => {
 
             case 'new-peer':
                 const peerId = data.id;
+                console.log('New peer joined:', peerId);
                 if (peerId !== userId && !peerConnections[peerId]) {
                     participants.add(peerId);
                     await setupPeerConnection(peerId, true);
@@ -60,15 +78,20 @@ signalingServer.onmessage = async (message) => {
                 break;
 
             case 'peer-disconnected':
+                console.log('Peer disconnected:', data.id);
                 await handlePeerDisconnection(data.id);
                 break;
 
             case 'media-state-changed':
+                console.log('Media state changed for peer:', data.peerId, data.mediaState);
                 updatePeerMediaState(data.peerId, data.mediaState);
                 break;
+
+            default:
+                console.warn('Unknown message type:', data.type);
         }
     } catch (error) {
-        console.error('Error handling message:', error);
+        console.error('Error handling WebSocket message:', error, message.data);
     }
 };
 
@@ -132,10 +155,15 @@ function createVideoElement(participantId, stream, isLocal = false) {
 // Setup peer connection
 async function setupPeerConnection(peerId, isInitiator) {
     try {
+        console.log(`Setting up peer connection with ${peerId}, isInitiator: ${isInitiator}`);
+        
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
             ]
         });
 
@@ -143,30 +171,42 @@ async function setupPeerConnection(peerId, isInitiator) {
 
         // Add local stream tracks
         if (localStream) {
-            localStream.getTracks().forEach(track => {
+            console.log(`Adding ${localStream.getTracks().length} tracks to peer connection with ${peerId}`);
+            localStream.getTracks().forEach((track, index) => {
+                console.log(`Adding track ${index}: ${track.kind} - ${track.label}`);
                 pc.addTrack(track, localStream);
             });
+        } else {
+            console.error('No local stream available when setting up peer connection');
         }
 
         // Handle ICE candidates
         pc.onicecandidate = (event) => {
             if (event.candidate) {
+                console.log(`Sending ICE candidate to ${peerId}:`, event.candidate.candidate);
                 signalingServer.send(JSON.stringify({
                     type: 'signal',
                     target: peerId,
                     signal: event.candidate,
                     sender: userId
                 }));
+            } else {
+                console.log(`ICE gathering complete for ${peerId}`);
             }
         };
 
         // Handle incoming stream
         pc.ontrack = (event) => {
-            console.log('Received remote stream from:', peerId);
+            console.log('Received remote stream from:', peerId, 'Stream tracks:', event.streams[0].getTracks().length);
+            event.streams[0].getTracks().forEach((track, index) => {
+                console.log(`Remote track ${index}: ${track.kind} - enabled: ${track.enabled}`);
+            });
+            
             if (!videoElements[peerId]) {
                 createVideoElement(peerId, event.streams[0], false);
                 updateVideoGrid();
             } else {
+                console.log('Updating existing video element for', peerId);
                 videoElements[peerId].video.srcObject = event.streams[0];
             }
         };
@@ -175,14 +215,27 @@ async function setupPeerConnection(peerId, isInitiator) {
         pc.onconnectionstatechange = () => {
             console.log(`Connection state with ${peerId}:`, pc.connectionState);
             if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+                console.log(`Peer ${peerId} connection failed or disconnected`);
                 handlePeerDisconnection(peerId);
+            } else if (pc.connectionState === 'connected') {
+                console.log(`Successfully connected to peer ${peerId}`);
             }
+        };
+
+        // Handle ICE connection state changes
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state with ${peerId}:`, pc.iceConnectionState);
         };
 
         // Create offer if initiator
         if (isInitiator) {
-            const offer = await pc.createOffer();
+            console.log(`Creating offer for ${peerId}`);
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
             await pc.setLocalDescription(offer);
+            console.log(`Sending offer to ${peerId}`);
             signalingServer.send(JSON.stringify({
                 type: 'signal',
                 target: peerId,
@@ -199,31 +252,102 @@ async function setupPeerConnection(peerId, isInitiator) {
 // Handle signaling messages
 async function handleSignalingMessage(data) {
     const peerId = data.sender;
+    console.log(`Handling signaling message from ${peerId}:`, data.signal.type || 'ICE candidate');
     
     if (!peerConnections[peerId]) {
+        console.log(`Creating new peer connection for ${peerId}`);
         await setupPeerConnection(peerId, false);
     }
 
     const pc = peerConnections[peerId];
 
+    if (!pc) {
+        console.error(`No peer connection found for ${peerId}`);
+        return;
+    }
+
     try {
         if (data.signal.type === 'offer') {
+            console.log(`Received offer from ${peerId}`);
+            if (pc.signalingState !== 'stable') {
+                console.log(`Peer connection not in stable state: ${pc.signalingState}, ignoring offer`);
+                return;
+            }
+            
             await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+            console.log(`Set remote description for ${peerId}`);
+            
+            // Process any queued ICE candidates
+            if (pc.pendingIceCandidates) {
+                console.log(`Processing ${pc.pendingIceCandidates.length} queued ICE candidates for ${peerId}`);
+                for (const candidate of pc.pendingIceCandidates) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (err) {
+                        console.error(`Error adding queued ICE candidate for ${peerId}:`, err);
+                    }
+                }
+                pc.pendingIceCandidates = [];
+            }
+            
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+            console.log(`Created and set local answer for ${peerId}`);
+            
             signalingServer.send(JSON.stringify({
                 type: 'signal',
                 target: peerId,
                 signal: answer,
                 sender: userId
             }));
+            console.log(`Sent answer to ${peerId}`);
+            
         } else if (data.signal.type === 'answer') {
+            console.log(`Received answer from ${peerId}`);
+            if (pc.signalingState !== 'have-local-offer') {
+                console.log(`Unexpected answer in signaling state: ${pc.signalingState}`);
+                return;
+            }
+            
             await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+            console.log(`Set remote description (answer) for ${peerId}`);
+            
+            // Process any queued ICE candidates
+            if (pc.pendingIceCandidates) {
+                console.log(`Processing ${pc.pendingIceCandidates.length} queued ICE candidates for ${peerId}`);
+                for (const candidate of pc.pendingIceCandidates) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (err) {
+                        console.error(`Error adding queued ICE candidate for ${peerId}:`, err);
+                    }
+                }
+                pc.pendingIceCandidates = [];
+            }
+            
         } else if (data.signal.candidate) {
-            await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+            console.log(`Received ICE candidate from ${peerId}:`, data.signal.candidate);
+            
+            if (pc.remoteDescription) {
+                await pc.addIceCandidate(new RTCIceCandidate(data.signal));
+                console.log(`Added ICE candidate for ${peerId}`);
+            } else {
+                console.log(`Queuing ICE candidate for ${peerId} (no remote description yet)`);
+                // Queue the candidate for later if remote description isn't set yet
+                if (!pc.pendingIceCandidates) {
+                    pc.pendingIceCandidates = [];
+                }
+                pc.pendingIceCandidates.push(data.signal);
+            }
         }
     } catch (error) {
-        console.error('Error handling signaling message:', error);
+        console.error(`Error handling signaling message from ${peerId}:`, error);
+        console.error('Message data:', data);
+        console.error('Peer connection state:', {
+            signalingState: pc.signalingState,
+            connectionState: pc.connectionState,
+            iceConnectionState: pc.iceConnectionState
+        });
     }
 }
 

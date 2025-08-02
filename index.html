@@ -479,8 +479,11 @@
             <div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 6px; font-size: 12px;">
                 <strong>Common Issues:</strong><br>
                 • Reload page → only see yourself → try <code>fixStreams()</code><br>
-                • Empty video tiles → try <code>refreshParticipants()</code><br>
-                • Connection stuck → try <code>hardReset()</code>
+                • <strong>Empty video tiles (space reserved but black) → try <code>emergencyFix()</code></strong><br>
+                • Connection stuck → try <code>hardReset()</code><br>
+                <br>
+                <strong>🚨 FOR YOUR CURRENT ISSUE:</strong><br>
+                Run <code>videoCallDebug.emergencyFix()</code> in console now!
             </div>
             <button onclick="document.getElementById('helpOverlay').style.display='none'">Close</button>
         </div>

@@ -275,30 +275,46 @@ async function initializeApp() {
         // Set up periodic connection health check
         setInterval(checkConnectionHealth, 30000);
         
-        // Set up periodic stream verification
+                 // Set up periodic stream verification
         setInterval(() => {
             if (participants.size > 1) {
                 console.log('🔍 Periodic stream verification...');
                 
                 let needsFixing = false;
+                let hasReservedSpace = false;
+                
                 Object.keys(videoElements).forEach(peerId => {
                     if (peerId !== userId) {
                         const videoEl = videoElements[peerId].video;
-                        if (videoEl.srcObject && videoEl.videoWidth === 0) {
-                            const videoTracks = videoEl.srcObject.getVideoTracks();
-                            if (videoTracks.some(t => t.readyState === 'live')) {
-                                console.log(`⚠️ Stream issue detected for ${peerId} - will auto-fix`);
+                        const wrapper = videoElements[peerId].wrapper;
+                        
+                        // Check if space is reserved but video not showing
+                        if (wrapper && wrapper.parentNode) {
+                            hasReservedSpace = true;
+                            
+                            if (videoEl.srcObject) {
+                                if (videoEl.videoWidth === 0 || videoEl.paused) {
+                                    const videoTracks = videoEl.srcObject.getVideoTracks();
+                                    if (videoTracks.some(t => t.readyState === 'live')) {
+                                        console.log(`⚠️ Stream issue detected for ${peerId} - will auto-fix`);
+                                        needsFixing = true;
+                                    }
+                                }
+                            } else {
+                                console.log(`⚠️ Reserved space but no stream for ${peerId}`);
                                 needsFixing = true;
                             }
                         }
                     }
                 });
                 
-                if (needsFixing) {
+                // If we have reserved space but videos aren't showing, fix it
+                if (hasReservedSpace && needsFixing) {
+                    console.log('🔧 Auto-fixing video display issues...');
                     setTimeout(verifyVideoStreams, 1000);
                 }
             }
-        }, 10000); // Check every 10 seconds
+        }, 5000); // Check every 5 seconds (more frequent to catch issues faster)
         
         // Show help overlay if user is alone for too long
         setTimeout(() => {
@@ -306,6 +322,33 @@ async function initializeApp() {
                 showHelpOverlay();
             }
         }, 15000); // Show after 15 seconds if alone
+        
+        // Auto-detect and fix the "reserved space but no video" issue
+        setTimeout(() => {
+            if (participants.size > 1) {
+                console.log('🔍 Auto-checking for reserved space video issues...');
+                
+                let foundIssue = false;
+                Object.entries(videoElements).forEach(([peerId, { wrapper, video }]) => {
+                    if (peerId !== userId && wrapper.parentNode) {
+                        // Check if space is reserved but video not displaying
+                        if (video.srcObject && video.videoWidth === 0) {
+                            const videoTracks = video.srcObject.getVideoTracks();
+                            if (videoTracks.some(t => t.readyState === 'live')) {
+                                console.log(`🚨 DETECTED: Reserved space but no video for ${peerId}`);
+                                foundIssue = true;
+                            }
+                        }
+                    }
+                });
+                
+                if (foundIssue) {
+                    console.log('🛠️ AUTO-FIXING reserved space video issues...');
+                    // Use the emergency fix function
+                    window.videoCallDebug?.emergencyFix?.();
+                }
+            }
+        }, 8000); // Check after 8 seconds to allow initial connection to settle
         
     } catch (error) {
         console.error('🚨 Error accessing media devices:', error);
@@ -398,13 +441,34 @@ function createVideoElement(participantId, stream, isLocal = false) {
     });
     
     video.addEventListener('loadeddata', () => {
-        console.log(`Video loaded data for ${participantId}`);
+        console.log(`📺 Video loaded data for ${participantId}`);
         videoWrapper.classList.remove('loading');
         videoWrapper.classList.add('loaded');
     });
     
     video.addEventListener('canplay', () => {
-        console.log(`Video can play for ${participantId}`);
+        console.log(`▶️ Video can play for ${participantId}`);
+        videoWrapper.classList.remove('loading');
+        videoWrapper.classList.add('loaded');
+    });
+    
+    video.addEventListener('loadedmetadata', () => {
+        console.log(`📊 Video metadata loaded for ${participantId}: ${video.videoWidth}x${video.videoHeight}`);
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+            videoWrapper.classList.remove('loading');
+            videoWrapper.classList.add('loaded');
+            
+            // Force play for remote videos to ensure they start
+            if (!isLocal) {
+                video.play().catch(e => {
+                    console.log(`⚠️ Play failed after metadata for ${participantId}: ${e.message}`);
+                });
+            }
+        }
+    });
+    
+    video.addEventListener('playing', () => {
+        console.log(`🎬 Video started playing for ${participantId}`);
         videoWrapper.classList.remove('loading');
         videoWrapper.classList.add('loaded');
     });
@@ -983,11 +1047,25 @@ function updateVideoGrid() {
     videoContainer.style.gridTemplateRows = `repeat(${layout.rows}, ${tileDimensions.height}px)`;
     
     // Update all video containers
-    Object.values(videoElements).forEach(({ wrapper }) => {
+    Object.entries(videoElements).forEach(([peerId, { wrapper, video }]) => {
         wrapper.style.width = `${tileDimensions.width}px`;
         wrapper.style.height = `${tileDimensions.height}px`;
         wrapper.style.minWidth = `${tileDimensions.width}px`;
         wrapper.style.minHeight = `${tileDimensions.height}px`;
+        
+        // Check if this is a remote video with display issues
+        if (peerId !== userId && video.srcObject && video.videoWidth === 0) {
+            console.log(`⚠️ Detected reserved space but no video for ${peerId} during layout update`);
+            
+            // Trigger automatic fix after layout is complete
+            setTimeout(() => {
+                const videoTracks = video.srcObject.getVideoTracks();
+                if (videoTracks.some(t => t.readyState === 'live')) {
+                    console.log(`🔧 Auto-triggering emergency fix for ${peerId}`);
+                    fixVideoStream(video, wrapper, peerId);
+                }
+            }, 500);
+        }
     });
     
     // Add accessibility attributes
@@ -1219,6 +1297,7 @@ function verifyVideoStreams() {
         console.log(`  - Ready state: ${videoEl.readyState}`);
         console.log(`  - Paused: ${videoEl.paused}`);
         console.log(`  - Current time: ${videoEl.currentTime}`);
+        console.log(`  - Muted: ${videoEl.muted}`);
         
         if (videoEl.srcObject) {
             const tracks = videoEl.srcObject.getTracks();
@@ -1228,38 +1307,99 @@ function verifyVideoStreams() {
             });
             
             // Try to fix streams that aren't displaying
-            if (videoEl.videoWidth === 0 && tracks.some(t => t.kind === 'video' && t.readyState === 'live')) {
+            const needsFixing = (
+                videoEl.videoWidth === 0 || 
+                videoEl.paused || 
+                videoEl.readyState < 2
+            ) && tracks.some(t => t.kind === 'video' && t.readyState === 'live');
+            
+            if (needsFixing) {
                 console.log(`🔧 Attempting to fix stream for ${peerId}`);
                 
-                // Force refresh the stream
-                const currentStream = videoEl.srcObject;
-                videoEl.srcObject = null;
-                setTimeout(() => {
-                    videoEl.srcObject = currentStream;
-                    videoEl.play().catch(e => console.log(`Play failed: ${e.message}`));
-                }, 100);
-                
-                // Update loading state
-                wrapper.classList.add('loading');
-                wrapper.classList.remove('loaded', 'no-video');
-                
-                // Check again after refresh
-                setTimeout(() => {
-                    if (videoEl.videoWidth > 0) {
-                        console.log(`✅ Fixed stream for ${peerId}`);
-                        wrapper.classList.remove('loading');
-                        wrapper.classList.add('loaded');
-                    } else {
-                        console.log(`❌ Could not fix stream for ${peerId}`);
-                        wrapper.classList.remove('loading');
-                        wrapper.classList.add('no-video');
-                    }
-                }, 2000);
+                // Multiple fix attempts
+                fixVideoStream(videoEl, wrapper, peerId);
+            } else if (videoEl.videoWidth > 0) {
+                console.log(`✅ Stream OK for ${peerId}`);
+                wrapper.classList.remove('loading', 'no-video');
+                wrapper.classList.add('loaded');
             }
         } else {
             console.log(`❌ No stream for ${peerId}`);
+            wrapper.classList.remove('loading');
+            wrapper.classList.add('no-video');
         }
     });
+}
+
+// Aggressive video stream fixing function
+function fixVideoStream(videoEl, wrapper, peerId) {
+    const currentStream = videoEl.srcObject;
+    
+    console.log(`🛠️ Applying multiple fixes for ${peerId}...`);
+    
+    // Update loading state
+    wrapper.classList.add('loading');
+    wrapper.classList.remove('loaded', 'no-video');
+    
+    // Fix 1: Reset srcObject
+    videoEl.srcObject = null;
+    
+    setTimeout(() => {
+        // Fix 2: Reassign stream
+        videoEl.srcObject = currentStream;
+        
+        // Fix 3: Force properties
+        videoEl.autoplay = true;
+        videoEl.playsInline = true;
+        
+        // Fix 4: Force play
+        const playAttempt = () => {
+            videoEl.play().then(() => {
+                console.log(`✅ Successfully started playback for ${peerId}`);
+            }).catch(e => {
+                console.log(`⚠️ Play attempt failed for ${peerId}: ${e.message}`);
+                // Try again after a short delay
+                setTimeout(playAttempt, 500);
+            });
+        };
+        
+        playAttempt();
+        
+        // Fix 5: Force dimensions check
+        const checkDimensions = () => {
+            if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+                console.log(`✅ Fixed stream for ${peerId}: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+                wrapper.classList.remove('loading');
+                wrapper.classList.add('loaded');
+                
+                // Force a layout update
+                updateVideoGrid();
+            } else {
+                console.log(`⏳ Still waiting for dimensions for ${peerId}...`);
+            }
+        };
+        
+        // Check multiple times
+        setTimeout(checkDimensions, 500);
+        setTimeout(checkDimensions, 1000);
+        setTimeout(checkDimensions, 2000);
+        
+        // Final fallback
+        setTimeout(() => {
+            if (wrapper.classList.contains('loading')) {
+                if (videoEl.videoWidth === 0) {
+                    console.log(`❌ Could not fix stream for ${peerId} - marking as no-video`);
+                    wrapper.classList.remove('loading');
+                    wrapper.classList.add('no-video');
+                } else {
+                    console.log(`✅ Stream appears fixed for ${peerId} (delayed)`);
+                    wrapper.classList.remove('loading');
+                    wrapper.classList.add('loaded');
+                }
+            }
+        }, 3000);
+        
+    }, 200);
 }
 
 // Force reconnect to all peers
@@ -1438,6 +1578,73 @@ window.videoCallDebug = {
         console.log('🔧 Running quick stream fixes...');
         verifyVideoStreams();
         setTimeout(updateVideoGrid, 1000);
+    },
+    emergencyFix: () => {
+        console.log('🚨 EMERGENCY FIX - Forcing all videos to display...');
+        
+        Object.keys(videoElements).forEach(peerId => {
+            if (peerId !== userId) {
+                const videoEl = videoElements[peerId].video;
+                const wrapper = videoElements[peerId].wrapper;
+                
+                console.log(`🆘 Emergency fixing ${peerId}...`);
+                
+                if (videoEl.srcObject) {
+                    // Force multiple aggressive fixes
+                    wrapper.classList.add('loading');
+                    
+                    // Immediate play attempt
+                    videoEl.play().catch(() => {});
+                    
+                    // Force properties
+                    videoEl.autoplay = true;
+                    videoEl.playsInline = true;
+                    videoEl.muted = false; // Unmute to force rendering
+                    
+                    // Stream refresh
+                    const stream = videoEl.srcObject;
+                    videoEl.srcObject = null;
+                    
+                    setTimeout(() => {
+                        videoEl.srcObject = stream;
+                        videoEl.play().catch(() => {});
+                        
+                        // Force style updates
+                        videoEl.style.width = '100%';
+                        videoEl.style.height = '100%';
+                        videoEl.style.objectFit = 'cover';
+                        
+                        // Check result
+                        setTimeout(() => {
+                            if (videoEl.videoWidth > 0) {
+                                console.log(`✅ Emergency fix SUCCESS for ${peerId}: ${videoEl.videoWidth}x${videoEl.videoHeight}`);
+                                wrapper.classList.remove('loading');
+                                wrapper.classList.add('loaded');
+                            } else {
+                                console.log(`❌ Emergency fix FAILED for ${peerId}`);
+                                
+                                // Last resort - recreate the element
+                                const stream = videoEl.srcObject;
+                                if (stream) {
+                                    console.log(`🔄 Recreating video element for ${peerId}`);
+                                    wrapper.remove();
+                                    delete videoElements[peerId];
+                                    
+                                    setTimeout(() => {
+                                        createVideoElement(peerId, stream, false);
+                                        updateVideoGrid();
+                                    }, 100);
+                                }
+                            }
+                        }, 1000);
+                        
+                    }, 200);
+                }
+            }
+        });
+        
+        // Force grid update
+        setTimeout(updateVideoGrid, 2000);
     },
     hardReset: () => {
         console.log('💥 Performing hard reset...');

@@ -1,39 +1,78 @@
 import React, { useMemo, useCallback } from 'react';
-import { Box, useTheme, useMediaQuery } from '@mui/material';
+import { Box, useTheme, useMediaQuery, Skeleton, Typography } from '@mui/material';
 import { VideoTile } from './VideoTile';
-import { Participant, GridLayout, TileDimensions } from '../../types/webrtc';
+import { Participant, GridLayout } from '../../types/webrtc';
+import { PersonAdd, Videocam } from '@mui/icons-material';
 
 interface VideoGridProps {
   participants: Participant[];
   onError?: (error: string) => void;
 }
 
+// Skeleton tile component for waiting participants
+const SkeletonTile: React.FC<{ index: number }> = ({ index }) => (
+  <Box
+    sx={{
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      borderRadius: 2,
+      border: '2px dashed rgba(255, 255, 255, 0.2)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.3s ease',
+      '&:hover': {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderColor: 'rgba(255, 255, 255, 0.3)',
+      }
+    }}
+  >
+    <PersonAdd 
+      sx={{ 
+        fontSize: { xs: 32, sm: 40, md: 48 }, 
+        color: 'rgba(255, 255, 255, 0.4)',
+        mb: 1
+      }} 
+    />
+    <Typography 
+      variant="caption" 
+      sx={{ 
+        color: 'rgba(255, 255, 255, 0.6)',
+        textAlign: 'center',
+        fontSize: { xs: '0.7rem', sm: '0.75rem' }
+      }}
+    >
+      Waiting for participant
+    </Typography>
+  </Box>
+);
+
 export const VideoGrid: React.FC<VideoGridProps> = ({ participants, onError }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const isSmallMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Calculate optimal grid layout
-  const calculateOptimalLayout = useCallback((
-    participantCount: number,
-    containerWidth: number,
-    containerHeight: number
-  ): GridLayout => {
+  // Calculate optimal grid layout based on participant count
+  const calculateOptimalLayout = useCallback((participantCount: number): GridLayout => {
     if (participantCount === 0) return { cols: 1, rows: 1 };
     if (participantCount === 1) return { cols: 1, rows: 1 };
 
-    const isLandscape = containerWidth > containerHeight;
-
     let cols: number, rows: number;
 
-    if (isSmallMobile && !isLandscape) {
+    if (isSmallMobile) {
       // Small mobile: prioritize vertical stacking
       if (participantCount <= 2) {
         cols = 1;
-        rows = participantCount;
+        rows = 2;
       } else if (participantCount <= 4) {
         cols = 2;
-        rows = Math.ceil(participantCount / 2);
+        rows = 2;
+      } else if (participantCount <= 6) {
+        cols = 2;
+        rows = 3;
       } else {
         cols = 2;
         rows = Math.ceil(participantCount / 2);
@@ -41,17 +80,20 @@ export const VideoGrid: React.FC<VideoGridProps> = ({ participants, onError }) =
     } else if (isMobile) {
       // Regular mobile: balanced approach
       if (participantCount <= 2) {
-        cols = isLandscape ? 2 : 1;
-        rows = isLandscape ? 1 : participantCount;
+        cols = 1;
+        rows = 2;
       } else if (participantCount <= 4) {
         cols = 2;
-        rows = Math.ceil(participantCount / 2);
+        rows = 2;
       } else if (participantCount <= 6) {
-        cols = isLandscape ? 3 : 2;
-        rows = Math.ceil(participantCount / cols);
+        cols = 2;
+        rows = 3;
+      } else if (participantCount <= 9) {
+        cols = 3;
+        rows = 3;
       } else {
-        cols = isLandscape ? 3 : 2;
-        rows = Math.ceil(participantCount / cols);
+        cols = 3;
+        rows = Math.ceil(participantCount / 3);
       }
     } else {
       // Desktop: optimize for screen real estate
@@ -82,108 +124,85 @@ export const VideoGrid: React.FC<VideoGridProps> = ({ participants, onError }) =
     return { cols, rows };
   }, [isMobile, isSmallMobile]);
 
-  // Calculate tile dimensions
-  const calculateTileDimensions = useCallback((
-    layout: GridLayout,
-    containerWidth: number,
-    containerHeight: number,
-    gap: number
-  ): TileDimensions => {
-    const { cols, rows } = layout;
-
-    const totalGapWidth = gap * (cols - 1);
-    const totalGapHeight = gap * (rows - 1);
-
-    const availableWidth = containerWidth - totalGapWidth;
-    const availableHeight = containerHeight - totalGapHeight;
-
-    let tileWidth = availableWidth / cols;
-    let tileHeight = availableHeight / rows;
-
-    // Maintain reasonable aspect ratio
-    const targetAspectRatio = isMobile ? 4/3 : 16/9;
-
-    if (tileWidth / tileHeight > targetAspectRatio * 1.5) {
-      tileWidth = tileHeight * targetAspectRatio;
-    } else if (tileHeight / tileWidth > (1/targetAspectRatio) * 1.5) {
-      tileHeight = tileWidth / targetAspectRatio;
-    }
-
-    // Ensure minimum and maximum sizes
-    const minTileSize = isSmallMobile ? 120 : isMobile ? 150 : 180;
-    const maxTileSize = isMobile ? 300 : 400;
-
-    tileWidth = Math.max(minTileSize, Math.min(maxTileSize, tileWidth));
-    tileHeight = Math.max(minTileSize * 0.75, Math.min(maxTileSize * 0.75, tileHeight));
-
-    return { width: tileWidth, height: tileHeight };
-  }, [isMobile, isSmallMobile]);
-
   // Memoize grid calculations
   const gridLayout = useMemo(() => {
-    const participantCount = participants.length;
-    
-    // Use viewport dimensions as approximation
-    const containerWidth = window.innerWidth - (isMobile ? 32 : 48);
-    const containerHeight = window.innerHeight - (isMobile ? 120 : 160);
-    
-    const layout = calculateOptimalLayout(participantCount, containerWidth, containerHeight);
-    const gap = isMobile ? 8 : 12;
-    const dimensions = calculateTileDimensions(layout, containerWidth, containerHeight, gap);
-    
-    return {
-      layout,
-      dimensions,
-      gap
-    };
-  }, [participants.length, calculateOptimalLayout, calculateTileDimensions, isMobile]);
+    const participantCount = Math.max(participants.length, 1);
+    return calculateOptimalLayout(participantCount);
+  }, [participants.length, calculateOptimalLayout]);
 
   const handleParticipantError = useCallback((participantId: string, error: string) => {
     console.error(`VideoTile Error for ${participantId}:`, error);
     onError?.(`Video error for participant ${participantId}: ${error}`);
   }, [onError]);
 
+  // Show loading state when no participants
   if (participants.length === 0) {
     return (
       <Box
         sx={{
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          flex: 1,
+          height: '100%',
           color: 'rgba(255, 255, 255, 0.7)',
-          fontSize: '1.2rem',
-          textAlign: 'center'
+          textAlign: 'center',
+          gap: 2
         }}
       >
-        Initializing video call...
+        <Videocam sx={{ fontSize: { xs: 48, sm: 64 }, opacity: 0.5 }} />
+        <Typography variant={isMobile ? 'h6' : 'h5'} sx={{ fontWeight: 300 }}>
+          Initializing video call...
+        </Typography>
+        <Typography variant="body2" sx={{ opacity: 0.8 }}>
+          Please wait while we connect you to the call
+        </Typography>
       </Box>
     );
   }
+
+  // Calculate total slots needed (show up to 4 skeleton tiles for better UX)
+  const totalSlots = Math.min(gridLayout.cols * gridLayout.rows, participants.length + Math.min(4, 8 - participants.length));
+  const skeletonCount = Math.max(0, totalSlots - participants.length);
 
   return (
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: `repeat(${gridLayout.layout.cols}, ${gridLayout.dimensions.width}px)`,
-        gridTemplateRows: `repeat(${gridLayout.layout.rows}, ${gridLayout.dimensions.height}px)`,
-        gap: `${gridLayout.gap}px`,
-        justifyContent: 'center',
-        alignContent: 'center',
-        flex: 1,
-        alignItems: 'center',
-        justifyItems: 'center',
+        gridTemplateColumns: `repeat(${gridLayout.cols}, 1fr)`,
+        gridTemplateRows: `repeat(${gridLayout.rows}, 1fr)`,
+        gap: { xs: 1, sm: 1.5, md: 2 },
+        height: '100%',
+        width: '100%',
+        padding: { xs: 0.5, sm: 1 },
+        boxSizing: 'border-box',
+        overflow: 'hidden',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        overflow: 'hidden'
       }}
     >
+      {/* Render actual participants */}
       {participants.map((participant, index) => (
-        <VideoTile
+        <Box
           key={participant.id}
-          participant={participant}
-          dimensions={gridLayout.dimensions}
-          onError={(error) => handleParticipantError(participant.id, error)}
-        />
+          sx={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            minHeight: { xs: 120, sm: 150, md: 180 },
+            display: 'flex',
+          }}
+        >
+          <VideoTile
+            participant={participant}
+            dimensions={{ width: '100%', height: '100%' }}
+            onError={(error) => handleParticipantError(participant.id, error)}
+          />
+        </Box>
+      ))}
+
+      {/* Render skeleton tiles for waiting participants */}
+      {Array.from({ length: skeletonCount }, (_, index) => (
+        <SkeletonTile key={`skeleton-${index}`} index={index} />
       ))}
     </Box>
   );

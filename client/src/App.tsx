@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
 import { VideoCall } from './components/VideoCall/VideoCall';
 import { ThankYouPage } from './components/ThankYou/ThankYouPage';
+import { NameInput } from './components/NameInput/NameInput';
 
 // Create Material-UI theme
 const theme = createTheme({
@@ -53,8 +54,20 @@ const theme = createTheme({
 });
 
 const App: React.FC = () => {
+  const [userName, setUserName] = useState<string | null>(null);
+  const [showNameInput, setShowNameInput] = useState(true);
+
+  const handleNameSubmit = (name: string) => {
+    setUserName(name);
+    setShowNameInput(false);
+    console.log('User name set:', name);
+  };
+
   const handleLeave = () => {
     console.log('User left the call');
+    // Reset name input state for next session
+    setUserName(null);
+    setShowNameInput(true);
     // Redirect to thank you page
     window.location.href = '/thank-you';
   };
@@ -72,11 +85,16 @@ const App: React.FC = () => {
           <Route 
             path="/" 
             element={
-              <VideoCall
-                roomId="default-room"
-                onLeave={handleLeave}
-                onError={handleError}
-              />
+              showNameInput ? (
+                <NameInput onNameSubmit={handleNameSubmit} />
+              ) : (
+                <VideoCall
+                  roomId="default-room"
+                  userName={userName}
+                  onLeave={handleLeave}
+                  onError={handleError}
+                />
+              )
             } 
           />
           <Route path="/thank-you" element={<ThankYouPage />} />

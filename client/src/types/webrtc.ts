@@ -1,6 +1,7 @@
 export interface Participant {
   id: string;
   socketId?: string;
+  name?: string;
   stream?: MediaStream;
   isLocal: boolean;
   mediaState: MediaState;
@@ -24,8 +25,8 @@ export interface GridLayout {
 }
 
 export interface TileDimensions {
-  width: number;
-  height: number;
+  width: number | string;
+  height: number | string;
 }
 
 export interface ConnectionStatus {
@@ -118,6 +119,7 @@ export interface UseWebRTCReturn {
 
 export interface VideoCallProps {
   roomId?: string;
+  userName?: string | null;
   onLeave?: () => void;
   onError?: (error: string) => void;
 }

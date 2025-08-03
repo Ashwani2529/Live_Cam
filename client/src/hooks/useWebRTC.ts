@@ -29,7 +29,7 @@ const getWebSocketUrl = () => {
   return 'wss://live-cam.onrender.com';
 };
 
-export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
+export const useWebRTC = (roomId: string = 'default-room', userName?: string | null): UseWebRTCReturn => {
   // State management
   const [participants, setParticipants] = useState<Map<string, Participant>>(new Map());
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -76,6 +76,7 @@ export const useWebRTC = (roomId: string = 'default-room'): UseWebRTCReturn => {
       // Add local participant
       const localParticipant: Participant = {
         id: userIdRef.current,
+        name: userName || undefined,
         stream,
         isLocal: true,
         mediaState: { video: true, audio: true },

@@ -11,7 +11,7 @@ import { Participant, TileDimensions } from '../../types/webrtc';
 
 interface VideoTileProps {
   participant: Participant;
-  dimensions?: TileDimensions;
+  dimensions?: TileDimensions | { width: string; height: string };
   onError?: (error: string) => void;
 }
 
@@ -184,7 +184,10 @@ export const VideoTile: React.FC<VideoTileProps> = ({
   }, [participant.stream, participant.isLocal, videoLoaded, isLoading, hasError, refreshStream]);
 
   const getParticipantName = () => {
-    return participant.isLocal ? 'You' : `Participant ${participant.id.substring(0, 6)}`;
+    if (participant.isLocal) {
+      return participant.name || 'You';
+    }
+    return participant.name || `Participant ${participant.id.substring(0, 6)}`;
   };
 
   const getConnectionColor = () => {
@@ -201,12 +204,8 @@ export const VideoTile: React.FC<VideoTileProps> = ({
     <Box
       sx={{
         position: 'relative',
-        width: dimensions?.width || '100%',
-        height: dimensions?.height || '100%',
-        minWidth: dimensions?.width || 150,
-        minHeight: dimensions?.height || 120,
-        maxWidth: dimensions?.width || 400,
-        maxHeight: dimensions?.height || 300,
+        width: '100%',
+        height: '100%',
         backgroundColor: '#000',
         borderRadius: 2,
         overflow: 'hidden',

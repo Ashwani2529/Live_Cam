@@ -20,26 +20,28 @@ export const Controls: React.FC<ControlsProps> = ({
 }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [hideTimer, setHideTimer] = useState<NodeJS.Timeout | null>(null);
+  const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
+  const [isHoveringControls, setIsHoveringControls] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const buttonSize = isMobile ? 50 : 56;
   const iconSize = isMobile ? 24 : 28;
 
-  // Auto-hide controls after 4 seconds
+  // Auto-hide controls after 4 seconds (but not if hovering)
   useEffect(() => {
-    const startHideTimer = () => {
+    if (isControlsVisible && !isHoveringControls) {
+      // Clear any existing timer
       if (hideTimer) {
         clearTimeout(hideTimer);
       }
+      
+      // Set new timer to hide controls
       const timer = setTimeout(() => {
         setIsControlsVisible(false);
       }, 4000);
+      
       setHideTimer(timer);
-    };
-
-    if (isControlsVisible) {
-      startHideTimer();
     }
 
     return () => {
@@ -47,30 +49,73 @@ export const Controls: React.FC<ControlsProps> = ({
         clearTimeout(hideTimer);
       }
     };
-  }, [isControlsVisible, hideTimer]);
+  }, [isControlsVisible, isHoveringControls]);
 
-  // Show controls when clicked anywhere
+  // Show controls on user interaction (click or mouse move)
   useEffect(() => {
-    const handleClick = () => {
-      setIsControlsVisible(true);
+    let mouseMoveTimeout: NodeJS.Timeout;
+
+    const handleUserActivity = (event: MouseEvent) => {
+      const target = event.target as Element;
+      // Don't show controls if interacting with control buttons themselves
+      if (!target.closest('[role="toolbar"]')) {
+        setIsControlsVisible(true);
+      }
     };
 
-    document.addEventListener('click', handleClick);
+    const handleMouseMove = () => {
+      // Debounce mouse movement to avoid too frequent updates
+      clearTimeout(mouseMoveTimeout);
+      mouseMoveTimeout = setTimeout(() => {
+        setIsControlsVisible(true);
+      }, 100);
+    };
+
+    // Listen for clicks and mouse movement
+    document.addEventListener('click', handleUserActivity);
+    document.addEventListener('mousemove', handleMouseMove);
+    
     return () => {
-      document.removeEventListener('click', handleClick);
+      clearTimeout(mouseMoveTimeout);
+      document.removeEventListener('click', handleUserActivity);
+      document.removeEventListener('mousemove', handleMouseMove);
     };
   }, []);
 
-  const handleFlipCamera = () => {
-    // Get the current video track
-    navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: 'user' } // This will request the front camera
-    }).then(stream => {
-      // Logic to flip camera would be handled here
-      // For now, just toggle video to simulate camera flip
+  const handleFlipCamera = async () => {
+    try {
+      // Determine the new facing mode
+      const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+      
+      // Get new video stream with different facing mode
+      const newStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: newFacingMode },
+        audio: isAudioEnabled
+      });
+
+      // Get current video element to replace the stream
+      const videoElements = document.querySelectorAll('video');
+      const localVideo = Array.from(videoElements).find(video => video.muted); // Local video is muted
+      
+      if (localVideo && localVideo.srcObject) {
+        // Stop current video tracks
+        const currentStream = localVideo.srcObject as MediaStream;
+        currentStream.getVideoTracks().forEach(track => track.stop());
+        
+        // Replace with new stream
+        localVideo.srcObject = newStream;
+        
+        // Update facing mode state
+        setCurrentFacingMode(newFacingMode);
+        
+        console.log(`Camera flipped to: ${newFacingMode}`);
+      }
+    } catch (error) {
+      console.error('Failed to flip camera:', error);
+      // If flip fails, fall back to toggling video
       onToggleVideo();
       setTimeout(() => onToggleVideo(), 100);
-    }).catch(console.error);
+    }
   };
 
   return (
@@ -79,6 +124,8 @@ export const Controls: React.FC<ControlsProps> = ({
         component="div"
         role="toolbar"
         aria-label="Video call controls"
+        onMouseEnter={() => setIsHoveringControls(true)}
+        onMouseLeave={() => setIsHoveringControls(false)}
         sx={{
           position: 'fixed',
           bottom: { xs: 20, sm: 30 },

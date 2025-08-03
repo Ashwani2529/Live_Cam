@@ -243,7 +243,7 @@ export const ThankYouPage: React.FC = () => {
                       width: isMobile ? 80 : 120,
                       height: isMobile ? 80 : 120,
                       borderRadius: '50%',
-                      background: 'linear-gradient(45deg, #4a4a4a 30%, #6a6a6a 90%)',
+                      background: 'rgb(250, 4, 4)',
                       marginBottom: isMobile ? 1.5 : 3,
                       animation: `${floatingAnimation} 3s ease-in-out infinite`,
                     }}

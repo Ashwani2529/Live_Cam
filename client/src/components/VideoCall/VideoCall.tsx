@@ -7,7 +7,8 @@ import { ConnectionStatus } from './ConnectionStatus';
 import { VideoCallProps } from '../../types/webrtc';
 
 export const VideoCall: React.FC<VideoCallProps> = ({ 
-  roomId = 'default-room', 
+  roomId = 'default-room',
+  userName = null,
   onLeave, 
   onError 
 }) => {
@@ -20,7 +21,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
     toggleAudio,
     leaveCall,
     refreshParticipants
-  } = useWebRTC(roomId);
+  } = useWebRTC(roomId, userName);
 
   const handleLeave = () => {
     leaveCall();
@@ -63,7 +64,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
         }}
       >
         <Typography variant="h5" component="h1" sx={{ fontWeight: 300 }}>
-          Live Video Call
+          {userName ? `${userName}'s Video Call` : 'Live Video Call'}
         </Typography>
         
         <ConnectionStatus 
@@ -79,7 +80,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          p: { xs: 1, sm: 2, md: 3 },
+          p: { xs: 0.5, sm: 1, md: 1.5 },
           minHeight: 0,
           overflow: 'hidden'
         }}
@@ -96,32 +97,41 @@ export const VideoCall: React.FC<VideoCallProps> = ({
         )}
 
         {/* Video Grid */}
-        <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        <Box sx={{ 
+          flex: 1, 
+          display: 'flex', 
+          minHeight: 0, 
+          width: '100%',
+          position: 'relative'
+        }}>
           <VideoGrid 
             participants={participantsArray}
             onError={handleError}
           />
         </Box>
 
-        {/* Participant Counter */}
+        {/* Participant Counter - Moved to absolute positioning to not affect grid height */}
         {participantCount > 0 && (
           <Box
             sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              mt: 1,
-              mb: { xs: 8, sm: 10, md: 12 } // Account for fixed controls
+              position: 'absolute',
+              bottom: { xs: 80, sm: 90, md: 100 },
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 999
             }}
           >
             <Typography
               variant="body2"
               sx={{
                 color: 'rgba(255, 255, 255, 0.7)',
-                background: 'rgba(0, 0, 0, 0.3)',
+                background: 'rgba(0, 0, 0, 0.6)',
                 px: 2,
                 py: 0.5,
                 borderRadius: 2,
-                backdropFilter: 'blur(10px)'
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                fontSize: { xs: '0.75rem', sm: '0.875rem' }
               }}
             >
               {participantCount} participant{participantCount !== 1 ? 's' : ''} in call

@@ -49,8 +49,8 @@ const gradientAnimation = keyframes`
 `;
 
 const pulseGlow = keyframes`
-  0%, 100% { box-shadow: 0 0 20px rgba(33, 150, 243, 0.3); }
-  50% { box-shadow: 0 0 40px rgba(33, 150, 243, 0.6), 0 0 60px rgba(33, 150, 243, 0.4); }
+  0%, 100% { box-shadow: 0 0 20px rgba(100, 100, 100, 0.2); }
+  50% { box-shadow: 0 0 40px rgba(150, 150, 150, 0.3), 0 0 60px rgba(120, 120, 120, 0.2); }
 `;
 
 export const ThankYouPage: React.FC = () => {
@@ -114,8 +114,8 @@ export const ThankYouPage: React.FC = () => {
         height: isMobile ? '100vh' : 'auto',
         background: `
           linear-gradient(-45deg, 
-            #1e3c72, #2a5298, #667eea, #764ba2, 
-            #f093fb, #f5576c, #4facfe, #00f2fe
+            #0f0f0f, #1a1a1a, #2d2d2d, #3a3a3a, 
+            #2c2c2c, #1e1e1e, #252525, #333333
           )`,
         backgroundSize: '400% 400%',
         animation: `${gradientAnimation} 15s ease infinite`,
@@ -201,10 +201,10 @@ export const ThankYouPage: React.FC = () => {
             sx={{
               padding: isMobile ? 2 : 6,
               textAlign: 'center',
-              background: 'rgba(255, 255, 255, 0.1)',
+              background: 'rgba(30, 30, 30, 0.95)',
               backdropFilter: 'blur(20px)',
               borderRadius: '24px',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
               animation: `${pulseGlow} 3s ease-in-out infinite`,
               position: 'relative',
               overflow: 'hidden',
@@ -224,9 +224,9 @@ export const ThankYouPage: React.FC = () => {
                 right: 0,
                 bottom: 0,
                 background: `
-                  radial-gradient(circle at 20% 50%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
-                  radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
-                  radial-gradient(circle at 40% 80%, rgba(120, 219, 255, 0.3) 0%, transparent 50%)
+                  radial-gradient(circle at 20% 50%, rgba(80, 80, 80, 0.2) 0%, transparent 50%),
+                  radial-gradient(circle at 80% 20%, rgba(100, 100, 100, 0.2) 0%, transparent 50%),
+                  radial-gradient(circle at 40% 80%, rgba(90, 90, 90, 0.2) 0%, transparent 50%)
                 `,
                 zIndex: -1,
               }}
@@ -243,7 +243,7 @@ export const ThankYouPage: React.FC = () => {
                       width: isMobile ? 80 : 120,
                       height: isMobile ? 80 : 120,
                       borderRadius: '50%',
-                      background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+                      background: 'linear-gradient(45deg, #4a4a4a 30%, #6a6a6a 90%)',
                       marginBottom: isMobile ? 1.5 : 3,
                       animation: `${floatingAnimation} 3s ease-in-out infinite`,
                     }}
@@ -257,7 +257,7 @@ export const ThankYouPage: React.FC = () => {
                   component="h1"
                   sx={{
                     fontWeight: 'bold',
-                    background: 'linear-gradient(45deg, #fff, #f0f0f0)',
+                    background: 'linear-gradient(45deg, #ffffff, #e0e0e0)',
                     backgroundClip: 'text',
                     WebkitBackgroundClip: 'text',
                     WebkitTextFillColor: 'transparent',
@@ -296,7 +296,7 @@ export const ThankYouPage: React.FC = () => {
                   startIcon={<Videocam />}
                   endIcon={<People />}
                   sx={{
-                    background: 'linear-gradient(45deg, #4CAF50 30%, #45A049 90%)',
+                    background: 'linear-gradient(45deg, #2d2d2d 30%, #404040 90%)',
                     color: 'white',
                     padding: isMobile ? '10px 20px' : '16px 32px',
                     fontSize: isMobile ? '0.9rem' : '1.2rem',
@@ -311,7 +311,7 @@ export const ThankYouPage: React.FC = () => {
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(76, 175, 80, 0.6)',
-                      background: 'linear-gradient(45deg, #45A049 30%, #4CAF50 90%)',
+                      background: 'linear-gradient(45deg, #404040 30%, #2d2d2d 90%)',
                     },
                     '&:active': {
                       transform: 'translateY(-2px) scale(1.02)',
@@ -329,7 +329,7 @@ export const ThankYouPage: React.FC = () => {
                   onClick={handlePortfolioClick}
                   endIcon={<Launch />}
                   sx={{
-                    background: 'linear-gradient(45deg, #FF6B6B 30%, #FF8E53 90%)',
+                    background: 'linear-gradient(45deg, #555555 30%, #757575 90%)',
                     color: 'white',
                     padding: isMobile ? '10px 20px' : '16px 32px',
                     fontSize: isMobile ? '0.85rem' : '1.1rem',
@@ -344,7 +344,7 @@ export const ThankYouPage: React.FC = () => {
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.05)',
                       boxShadow: '0 12px 40px rgba(255, 107, 107, 0.6)',
-                      background: 'linear-gradient(45deg, #FF8E53 30%, #FF6B6B 90%)',
+                      background: 'linear-gradient(45deg, #757575 30%, #555555 90%)',
                     },
                     '&:active': {
                       transform: 'translateY(-2px) scale(1.02)',

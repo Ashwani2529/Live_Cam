@@ -597,37 +597,72 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
   }, [setupPeerConnection, handleSignalingMessage]);
 
   // Toggle video
-  const toggleVideo = useCallback(() => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        const newVideoState = !isVideoEnabled;
-        videoTrack.enabled = newVideoState;
-        setIsVideoEnabled(newVideoState);
+  const toggleVideo = useCallback(async () => {
+    if (!localStream) return;
 
-        // Update local participant
-        setParticipants(prev => {
-          const newParticipants = new Map(prev);
-          const localParticipant = newParticipants.get(userIdRef.current);
-          
-          if (localParticipant) {
-            newParticipants.set(userIdRef.current, {
-              ...localParticipant,
-              mediaState: { ...localParticipant.mediaState, video: newVideoState }
-            });
-          }
-          
-          return newParticipants;
-        });
+    const newVideoState = !isVideoEnabled;
 
-        // Broadcast media state change
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'media-state-changed',
-            mediaState: { video: newVideoState, audio: isAudioEnabled }
-          }));
+    if (!newVideoState) {
+      // Turning off: stop the track to release camera (works reliably on mobile)
+      const videoTracks = localStream.getVideoTracks();
+      videoTracks.forEach(track => {
+        track.stop();
+        localStream.removeTrack(track);
+      });
+
+      // Replace track with null in all peer connections
+      peerConnectionsRef.current.forEach(pc => {
+        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (sender) {
+          sender.replaceTrack(null).catch(err =>
+            console.error('Failed to mute video track in peer connection:', err)
+          );
         }
+      });
+    } else {
+      // Turning on: get a fresh video track (required on mobile after stopping)
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const newVideoTrack = newStream.getVideoTracks()[0];
+
+        localStream.addTrack(newVideoTrack);
+
+        // Replace track in all peer connections
+        peerConnectionsRef.current.forEach(pc => {
+          const sender = pc.getSenders().find(s => s.track === null || s.track?.kind === 'video');
+          if (sender) {
+            sender.replaceTrack(newVideoTrack).catch(err =>
+              console.error('Failed to replace video track in peer connection:', err)
+            );
+          }
+        });
+      } catch (error) {
+        console.error('Failed to restart video:', error);
+        return;
       }
+    }
+
+    setIsVideoEnabled(newVideoState);
+
+    // Update local participant
+    setParticipants(prev => {
+      const newParticipants = new Map(prev);
+      const localParticipant = newParticipants.get(userIdRef.current);
+      if (localParticipant) {
+        newParticipants.set(userIdRef.current, {
+          ...localParticipant,
+          mediaState: { ...localParticipant.mediaState, video: newVideoState }
+        });
+      }
+      return newParticipants;
+    });
+
+    // Broadcast media state change
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'media-state-changed',
+        mediaState: { video: newVideoState, audio: isAudioEnabled }
+      }));
     }
   }, [localStream, isVideoEnabled, isAudioEnabled]);
 

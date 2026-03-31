@@ -241,6 +241,7 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           height: '100%',
           objectFit: 'cover',
           display: videoLoaded && !hasError ? 'block' : 'none',
+          transform: participant.isLocal ? 'scaleX(-1)' : 'none',
           background: 'linear-gradient(45deg, #1a1a1a 25%, transparent 25%), linear-gradient(-45deg, #1a1a1a 25%, transparent 25%)',
           backgroundSize: '20px 20px'
         }}

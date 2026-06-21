@@ -268,7 +268,7 @@ wss.on('connection', (ws) => {
           // Clean up empty rooms
           if (room.participants.length === 0) {
             rooms.delete(currentRoom);
-            console.log(`🗑️ Deleted empty room: ${currentRoom}`);
+            console.log(`Deleted empty room: ${currentRoom}`);
           }
         }
       }
@@ -277,13 +277,13 @@ wss.on('connection', (ws) => {
 
   // Handle errors
   ws.on('error', (error) => {
-    console.error(`❌ WebSocket error:`, error);
+    console.error(`WebSocket error:`, error);
   });
 });
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('❌ Express error:', err);
+  console.error('Express error:', err);
   res.status(500).json({ 
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'

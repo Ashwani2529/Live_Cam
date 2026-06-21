@@ -19,6 +19,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
     isAudioEnabled,
     toggleVideo,
     toggleAudio,
+    switchCamera,
     leaveCall,
     refreshParticipants
   } = useWebRTC(roomId, userName);
@@ -45,7 +46,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
     <Box
       sx={{
         height: '100vh',
-        background: 'linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)',
+        background: 'radial-gradient(circle at 20% 0%, #15294d 0%, #0b0f19 60%, #07090f 100%)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden'
@@ -54,21 +55,51 @@ export const VideoCall: React.FC<VideoCallProps> = ({
       {/* Header */}
       <Box
         sx={{
-          background: 'rgba(0, 0, 0, 0.8)',
+          background: 'rgba(11, 15, 25, 0.7)',
+          backdropFilter: 'blur(12px)',
           color: 'white',
-          p: 2,
+          px: { xs: 2, sm: 3 },
+          py: { xs: 1.25, sm: 1.5 },
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)'
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
         }}
       >
-        <Typography variant="h5" component="h1" sx={{ fontWeight: 300 }}>
-          {userName ? `${userName}'s Video Call` : 'Live Video Call'}
-        </Typography>
-        
-        <ConnectionStatus 
-          status={connectionStatus} 
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: '50%',
+              backgroundColor: '#34d399',
+              boxShadow: '0 0 0 4px rgba(52, 211, 153, 0.18)',
+              flexShrink: 0,
+              animation: 'pulse 2s ease-in-out infinite',
+              '@keyframes pulse': {
+                '0%, 100%': { opacity: 1 },
+                '50%': { opacity: 0.4 }
+              }
+            }}
+          />
+          <Typography
+            variant="h6"
+            component="h1"
+            sx={{
+              fontWeight: 600,
+              letterSpacing: 0.2,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontSize: { xs: '1rem', sm: '1.25rem' }
+            }}
+          >
+            {userName ? `${userName}'s Call` : 'Live Video Call'}
+          </Typography>
+        </Box>
+
+        <ConnectionStatus
+          status={connectionStatus}
           onRefresh={refreshParticipants}
         />
       </Box>
@@ -110,34 +141,6 @@ export const VideoCall: React.FC<VideoCallProps> = ({
           />
         </Box>
 
-        {/* Participant Counter - Moved to absolute positioning to not affect grid height */}
-        {participantCount > 0 && (
-          <Box
-            sx={{
-              position: 'absolute',
-              bottom: { xs: 80, sm: 90, md: 100 },
-              left: '50%',
-              transform: 'translateX(-50%)',
-              zIndex: 999
-            }}
-          >
-            <Typography
-              variant="body2"
-              sx={{
-                color: 'rgba(255, 255, 255, 0.7)',
-                background: 'rgba(0, 0, 0, 0.6)',
-                px: 2,
-                py: 0.5,
-                borderRadius: 2,
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                fontSize: { xs: '0.75rem', sm: '0.875rem' }
-              }}
-            >
-              {participantCount} participant{participantCount !== 1 ? 's' : ''} in call
-            </Typography>
-          </Box>
-        )}
       </Container>
 
       {/* Controls */}
@@ -146,6 +149,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({
         isAudioEnabled={isAudioEnabled}
         onToggleVideo={toggleVideo}
         onToggleAudio={toggleAudio}
+        onSwitchCamera={switchCamera}
         onLeave={handleLeave}
         participantCount={participantCount}
       />

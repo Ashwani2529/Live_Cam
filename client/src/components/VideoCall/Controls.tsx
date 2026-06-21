@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, IconButton, Tooltip, Zoom, useMediaQuery, useTheme, Fade } from '@mui/material';
+import { Box, IconButton, Tooltip, Zoom, useMediaQuery, useTheme, Fade, CircularProgress } from '@mui/material';
 import { 
   Videocam, 
   VideocamOff, 
@@ -15,12 +15,13 @@ export const Controls: React.FC<ControlsProps> = ({
   isAudioEnabled,
   onToggleVideo,
   onToggleAudio,
+  onSwitchCamera,
   onLeave,
   participantCount
 }) => {
   const [isControlsVisible, setIsControlsVisible] = useState(true);
   const [hideTimer, setHideTimer] = useState<NodeJS.Timeout | null>(null);
-  const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
   const [isHoveringControls, setIsHoveringControls] = useState(false);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -83,38 +84,12 @@ export const Controls: React.FC<ControlsProps> = ({
   }, []);
 
   const handleFlipCamera = async () => {
+    if (isSwitchingCamera) return;
+    setIsSwitchingCamera(true);
     try {
-      // Determine the new facing mode
-      const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
-      
-      // Get new video stream with different facing mode
-      const newStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: newFacingMode },
-        audio: isAudioEnabled
-      });
-
-      // Get current video element to replace the stream
-      const videoElements = document.querySelectorAll('video');
-      const localVideo = Array.from(videoElements).find(video => video.muted); // Local video is muted
-      
-      if (localVideo && localVideo.srcObject) {
-        // Stop current video tracks
-        const currentStream = localVideo.srcObject as MediaStream;
-        currentStream.getVideoTracks().forEach(track => track.stop());
-        
-        // Replace with new stream
-        localVideo.srcObject = newStream;
-        
-        // Update facing mode state
-        setCurrentFacingMode(newFacingMode);
-        
-        console.log(`Camera flipped to: ${newFacingMode}`);
-      }
-    } catch (error) {
-      console.error('Failed to flip camera:', error);
-      // If flip fails, fall back to toggling video
-      onToggleVideo();
-      setTimeout(() => onToggleVideo(), 100);
+      await onSwitchCamera();
+    } finally {
+      setIsSwitchingCamera(false);
     }
   };
 
@@ -218,6 +193,7 @@ export const Controls: React.FC<ControlsProps> = ({
       >
         <IconButton
           onClick={handleFlipCamera}
+          disabled={isSwitchingCamera}
           sx={{
             width: buttonSize,
             height: buttonSize,
@@ -231,11 +207,19 @@ export const Controls: React.FC<ControlsProps> = ({
             },
             '&:active': {
               transform: 'scale(0.95)'
+            },
+            '&.Mui-disabled': {
+              backgroundColor: '#6c757d',
+              color: 'rgba(255, 255, 255, 0.5)'
             }
           }}
           aria-label="Flip camera"
         >
-          <FlipCameraIos sx={{ fontSize: iconSize }} />
+          {isSwitchingCamera ? (
+            <CircularProgress size={iconSize} sx={{ color: 'white' }} />
+          ) : (
+            <FlipCameraIos sx={{ fontSize: iconSize }} />
+          )}
         </IconButton>
       </Tooltip>
 

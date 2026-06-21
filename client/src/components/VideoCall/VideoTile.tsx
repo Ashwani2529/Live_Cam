@@ -206,27 +206,21 @@ export const VideoTile: React.FC<VideoTileProps> = ({
         position: 'relative',
         width: '100%',
         height: '100%',
-        backgroundColor: '#000',
-        borderRadius: 2,
+        backgroundColor: '#0b0f19',
+        borderRadius: 3,
         overflow: 'hidden',
-        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.3)',
-        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: 'scale(1)',
+        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.35)',
+        border: '1px solid rgba(255, 255, 255, 0.06)',
+        transition: 'box-shadow 0.25s ease, border-color 0.25s ease',
         opacity: 1,
-        animation: 'videoEnter 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        animation: 'videoEnter 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
         '&:hover': {
-          transform: 'scale(1.02)',
-          boxShadow: '0 6px 25px rgba(0, 0, 0, 0.4)'
+          boxShadow: '0 6px 28px rgba(0, 0, 0, 0.5)',
+          borderColor: 'rgba(33, 150, 243, 0.6)'
         },
         '@keyframes videoEnter': {
-          from: {
-            transform: 'scale(0.8)',
-            opacity: 0
-          },
-          to: {
-            transform: 'scale(1)',
-            opacity: 1
-          }
+          from: { opacity: 0, transform: 'translateY(8px)' },
+          to: { opacity: 1, transform: 'translateY(0)' }
         }
       }}
     >
@@ -241,9 +235,13 @@ export const VideoTile: React.FC<VideoTileProps> = ({
           height: '100%',
           objectFit: 'cover',
           display: videoLoaded && !hasError ? 'block' : 'none',
-          transform: participant.isLocal ? 'scaleX(-1)' : 'none',
-          background: 'linear-gradient(45deg, #1a1a1a 25%, transparent 25%), linear-gradient(-45deg, #1a1a1a 25%, transparent 25%)',
-          backgroundSize: '20px 20px'
+          // Mirror only the local front ("user") camera so the self-view feels
+          // like a mirror. The back camera and all remote feeds stay un-mirrored.
+          transform:
+            participant.isLocal && participant.facingMode !== 'environment'
+              ? 'scaleX(-1)'
+              : 'none',
+          backgroundColor: '#0b0f19'
         }}
       />
 

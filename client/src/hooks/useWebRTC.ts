@@ -39,6 +39,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
   });
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
 
   // Refs for persistent data
   const wsRef = useRef<WebSocket | null>(null);
@@ -46,6 +47,9 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
   const userIdRef = useRef<string>(uuidv4());
   const currentRoomRef = useRef<string>(roomId);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const facingModeRef = useRef<'user' | 'environment'>('user');
+  // Guards against overlapping camera switches (rapid taps on the flip button)
+  const switchingCameraRef = useRef(false);
 
   // Initialize media stream
   const initializeMediaStream = useCallback(async () => {
@@ -60,6 +64,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
       
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
+          facingMode: { ideal: 'user' },
           width: { ideal: 1280, max: 1920 },
           height: { ideal: 720, max: 1080 }
         },
@@ -80,7 +85,8 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
         stream,
         isLocal: true,
         mediaState: { video: true, audio: true },
-        connectionState: 'connected'
+        connectionState: 'connected',
+        facingMode: 'user'
       };
 
       setParticipants(prev => new Map(prev.set(userIdRef.current, localParticipant)));
@@ -88,7 +94,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
       console.log('✅ Media stream initialized:', stream.getTracks().length, 'tracks');
       return stream;
     } catch (error) {
-      console.error('❌ Failed to get media stream:', error);
+      console.error('Failed to get media stream:', error);
       setConnectionStatus({
         status: 'disconnected',
         message: 'Failed to access camera/microphone'
@@ -126,9 +132,9 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
       
       console.log(`✅ All ${tracks.length} tracks added to peer connection with ${peerId}`);
     } else {
-      console.error(`❌ No local stream available when setting up connection with ${peerId}`);
-      console.log(`❌ Current localStream state:`, currentLocalStream);
-      console.log(`❌ LocalStream from state:`, localStream);
+      console.error(`No local stream available when setting up connection with ${peerId}`);
+      console.log(`Current localStream state:`, currentLocalStream);
+      console.log(`LocalStream from state:`, localStream);
     }
 
     // Handle incoming streams
@@ -140,7 +146,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
       const remoteStream = event.streams[0];
       
       if (!remoteStream) {
-        console.error(`❌ No remote stream in ontrack event from ${peerId}`);
+        console.error(`No remote stream in ontrack event from ${peerId}`);
         return;
       }
       
@@ -199,7 +205,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
       });
 
       if (pc.connectionState === 'failed') {
-        console.log(`❌ Connection to ${peerId} failed - will retry`);
+        console.log(`Connection to ${peerId} failed - will retry`);
         setTimeout(() => {
           if (participants.has(peerId)) {
             setupPeerConnection(peerId, true);
@@ -224,7 +230,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
           }));
           console.log(`✅ ICE candidate sent to ${peerId}`);
         } else {
-          console.error(`❌ WebSocket not ready when sending ICE candidate to ${peerId}`);
+          console.error(`WebSocket not ready when sending ICE candidate to ${peerId}`);
         }
       } else {
         console.log(`🏁 ICE gathering complete for ${peerId}`);
@@ -239,9 +245,9 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
           // Double-check that we still have the local stream
           const currentLocalStream = localStreamRef.current;
           if (!currentLocalStream) {
-            console.error(`❌ No local stream available when creating offer for ${peerId}`);
-            console.log(`❌ LocalStream ref:`, currentLocalStream);
-            console.log(`❌ LocalStream state:`, localStream);
+            console.error(`No local stream available when creating offer for ${peerId}`);
+            console.log(`LocalStream ref:`, currentLocalStream);
+            console.log(`LocalStream state:`, localStream);
             return;
           }
           
@@ -264,10 +270,10 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
               sender: userIdRef.current
             }));
           } else {
-            console.error(`❌ WebSocket not ready when sending offer to ${peerId}`);
+            console.error(`WebSocket not ready when sending offer to ${peerId}`);
           }
         } catch (error) {
-          console.error(`❌ Error creating offer for ${peerId}:`, error);
+          console.error(`Error creating offer for ${peerId}:`, error);
         }
       }, 500); // Increased delay to ensure everything is ready
     } else if (isInitiator) {
@@ -315,21 +321,21 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
                 sender: userIdRef.current
               }));
             } else {
-              console.error(`❌ WebSocket not ready when sending answer to ${sender}`);
+              console.error(`WebSocket not ready when sending answer to ${sender}`);
             }
           } else {
-            console.log(`⚠️ Ignoring offer from ${sender}, signaling state: ${pc.signalingState}`);
+            console.log(`Ignoring offer from ${sender}, signaling state: ${pc.signalingState}`);
           }
         } else if (signal.type === 'answer') {
-          console.log(`📥 Received answer from ${sender}:`, signal);
-          console.log(`📊 Current connection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
+          console.log(`Received answer from ${sender}:`, signal);
+          console.log(`Current connection state: ${pc.connectionState}, signaling: ${pc.signalingState}`);
           
           // Only set remote description if we're in the right state
           if (pc.signalingState === 'have-local-offer') {
-            console.log(`✅ Setting remote description for answer from ${sender}`);
+            console.log(`Setting remote description for answer from ${sender}`);
             await pc.setRemoteDescription(signal);
           } else {
-            console.log(`⚠️ Ignoring answer from ${sender}, signaling state: ${pc.signalingState}`);
+            console.log(`Ignoring answer from ${sender}, signaling state: ${pc.signalingState}`);
           }
         }
       } else if ('candidate' in signal) {
@@ -338,7 +344,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
         await pc.addIceCandidate(signal);
       }
     } catch (error) {
-      console.error(`❌ Error handling signaling from ${sender}:`, error);
+      console.error(`Error handling signaling from ${sender}:`, error);
       
       // If there's a state error, try to reset the connection
       if (error instanceof Error && error.name === 'InvalidStateError') {
@@ -429,7 +435,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
     };
 
     ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
+      console.error('WebSocket error:', error);
       setConnectionStatus({
         status: 'disconnected',
         message: 'Connection failed'
@@ -574,7 +580,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
             break;
 
           case 'error':
-            console.error('❌ Server error:', data.message);
+            console.error('Server error:', data.message);
             setConnectionStatus({
               status: 'disconnected',
               message: data.message
@@ -589,7 +595,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
             console.warn('Unknown message type:', data.type);
         }
       } catch (error) {
-        console.error('❌ Error processing WebSocket message:', error);
+        console.error('Error processing WebSocket message:', error);
       }
     };
 
@@ -622,7 +628,9 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
     } else {
       // Turning on: get a fresh video track (required on mobile after stopping)
       try {
-        const newStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingModeRef.current } }
+        });
         const newVideoTrack = newStream.getVideoTracks()[0];
 
         localStream.addTrack(newVideoTrack);
@@ -701,6 +709,106 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
     }
   }, [localStream, isVideoEnabled, isAudioEnabled]);
 
+  // Switch between front (user) and back (environment) cameras.
+  // Uses replaceTrack so there is NO renegotiation and the call never blinks out.
+  const switchCamera = useCallback(async () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+
+    // Prevent overlapping switches (double-tap) which is the main cause of
+    // the camera turning off / black screen.
+    if (switchingCameraRef.current) {
+      console.log('⚠️ Camera switch already in progress, ignoring');
+      return;
+    }
+    switchingCameraRef.current = true;
+
+    const previousFacingMode = facingModeRef.current;
+    const newFacingMode = previousFacingMode === 'user' ? 'environment' : 'user';
+
+    // On most mobile devices only one camera can be open at a time, so we must
+    // stop the current video track BEFORE requesting the new one.
+    const oldVideoTrack = stream.getVideoTracks()[0];
+    if (oldVideoTrack) oldVideoTrack.stop();
+
+    const getCameraStream = (mode: 'user' | 'environment') =>
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: mode },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 }
+        },
+        audio: false
+      });
+
+    let newStream: MediaStream;
+    try {
+      newStream = await getCameraStream(newFacingMode);
+    } catch (error) {
+      console.error(`Failed to open ${newFacingMode} camera, restoring previous camera:`, error);
+      // Fall back to the camera we had so the user is never left with a black tile.
+      try {
+        newStream = await getCameraStream(previousFacingMode);
+      } catch (restoreError) {
+        console.error('Failed to restore previous camera:', restoreError);
+        switchingCameraRef.current = false;
+        return;
+      }
+    }
+
+    const newVideoTrack = newStream.getVideoTracks()[0];
+    if (!newVideoTrack) {
+      switchingCameraRef.current = false;
+      return;
+    }
+
+    // Honor the current mute state.
+    newVideoTrack.enabled = isVideoEnabled;
+
+    // Swap the track inside the SAME MediaStream object so the <video> element
+    // keeps playing without a re-attach.
+    if (oldVideoTrack) stream.removeTrack(oldVideoTrack);
+    stream.addTrack(newVideoTrack);
+
+    // Push the new track to every peer connection without renegotiating.
+    peerConnectionsRef.current.forEach(pc => {
+      const sender = pc.getSenders().find(s => s.track?.kind === 'video' || s.track === null);
+      if (sender) {
+        sender.replaceTrack(newVideoTrack).catch(err =>
+          console.error('Failed to replace video track in peer connection:', err)
+        );
+      }
+    });
+
+    // Trust what the device actually gave us (it may ignore the request on
+    // single-camera devices); fall back to what we asked for.
+    const appliedFacingMode: 'user' | 'environment' =
+      newVideoTrack.getSettings().facingMode === 'environment' ? 'environment'
+        : newVideoTrack.getSettings().facingMode === 'user' ? 'user'
+        : newFacingMode;
+
+    facingModeRef.current = appliedFacingMode;
+    setFacingMode(appliedFacingMode);
+
+    // Update the local participant so the tile re-renders and re-applies
+    // mirroring (front = mirrored, back = not mirrored).
+    setParticipants(prev => {
+      const newParticipants = new Map(prev);
+      const localParticipant = newParticipants.get(userIdRef.current);
+      if (localParticipant) {
+        newParticipants.set(userIdRef.current, {
+          ...localParticipant,
+          stream,
+          facingMode: appliedFacingMode
+        });
+      }
+      return newParticipants;
+    });
+
+    switchingCameraRef.current = false;
+    console.log(`✅ Camera switched to: ${appliedFacingMode}`);
+  }, [isVideoEnabled]);
+
   // Leave call
   const leaveCall = useCallback(() => {
     console.log('🚪 Leaving call...');
@@ -769,7 +877,7 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
         await initializeMediaStream();
         initializeWebSocket();
       } catch (error) {
-        console.error('❌ Failed to initialize:', error);
+        console.error('Failed to initialize:', error);
         isInitialized = false;
       }
     };
@@ -806,8 +914,10 @@ export const useWebRTC = (roomId: string = 'default-room', userName?: string | n
     connectionStatus,
     isVideoEnabled,
     isAudioEnabled,
+    facingMode,
     toggleVideo,
     toggleAudio,
+    switchCamera,
     leaveCall,
     refreshParticipants,
     joinRoom

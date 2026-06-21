@@ -6,6 +6,8 @@ export interface Participant {
   isLocal: boolean;
   mediaState: MediaState;
   connectionState: RTCPeerConnectionState;
+  /** Which camera the (local) participant is using. Drives mirroring. */
+  facingMode?: 'user' | 'environment';
 }
 
 export interface MediaState {
@@ -110,8 +112,10 @@ export interface UseWebRTCReturn {
   connectionStatus: ConnectionStatus;
   isVideoEnabled: boolean;
   isAudioEnabled: boolean;
+  facingMode: 'user' | 'environment';
   toggleVideo: () => void;
   toggleAudio: () => void;
+  switchCamera: () => Promise<void>;
   leaveCall: () => void;
   refreshParticipants: () => void;
   joinRoom: (roomId?: string) => void;
@@ -136,6 +140,7 @@ export interface ControlsProps {
   isAudioEnabled: boolean;
   onToggleVideo: () => void;
   onToggleAudio: () => void;
+  onSwitchCamera: () => void | Promise<void>;
   onLeave: () => void;
   participantCount: number;
 }

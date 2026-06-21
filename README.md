@@ -126,7 +126,7 @@ npm test               # Run tests
 
 ## 🌐 Deployment
 
-### **Backend Deployment (Railway/Render/Heroku)**
+### **Backend Deployment (Render)**
 1. Push your code to GitHub
 2. Connect your repository to your hosting platform
 3. Set environment variables:
@@ -147,8 +147,7 @@ Located in `client/src/hooks/useWebRTC.ts`:
 ```typescript
 const WEBRTC_CONFIG = {
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    // Add TURN servers for production
+    { urls: 'stun:stun.l.google.com:19302' }
   ]
 };
 ```

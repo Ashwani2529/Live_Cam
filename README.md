@@ -205,4 +205,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ using MERN Stack** 
+**Made with ❤️ using MERN Stack by A$H** 
